@@ -1,0 +1,31 @@
+{
+  "verification": {
+    "enabled": true,
+    "required": true,
+    "timeout_seconds": 600,
+    "commands": [
+      {
+        "name": "harness_python_compile",
+        "command": [
+          "python",
+          "-m",
+          "py_compile",
+          ".ai\\harness.py",
+          ".ai\\harness_fast.py",
+          ".ai\\harness_standard.py",
+          ".ai\\templates\\docx_helper.py"
+        ]
+      },
+      {
+        "name": "git_diff_check",
+        "command": [
+          "git",
+          "-c",
+          "safe.directory={root}",
+          "diff",
+          "--check"
+        ]
+      }
+    ]
+  }
+}
