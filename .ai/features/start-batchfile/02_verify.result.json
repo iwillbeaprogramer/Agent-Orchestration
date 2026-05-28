@@ -1,0 +1,59 @@
+{
+  "status": "PASS",
+  "next_stage": "done",
+  "human_gate_required": false,
+  "blocking_reason": "",
+  "risk_level": "low",
+  "harness_commit_required": true,
+  "changed_files": [
+    "src/start.bat",
+    "src/stop.bat",
+    "tests/test_batch_scripts.py"
+  ],
+  "verification_summary": "All tests passed and batch scripts verify successfully on target ports (8000, 5173).",
+  "history_notes": {
+    "implemented": [
+      "src/start.bat 배치 파일 생성: 백엔드(FastAPI)와 프론트엔드(React/Vite)를 독립 CMD에서 비동기로 병렬 구동",
+      "src/stop.bat 배치 파일 생성: netstat을 사용하여 8000, 5173 포트의 LISTENING PID를 찾아서 자동 종료",
+      "tests/test_batch_scripts.py 단위 테스트 생성: 스크립트 절대경로 독립성 및 커맨드 구성 정적 검증"
+    ],
+    "risks": [
+      "8000 또는 5173 포트를 사용하는 다른 타사 애플리케이션이 실행 중인 경우 stop.bat에 의해 종료될 수 있음"
+    ],
+    "future_improvements": [
+      "차후 크로스 플랫폼 호환성을 위해 macOS/Linux용 쉘 스크립트(.sh) 추가 고려"
+    ],
+    "decisions": [
+      "스크립트 실행 시 사용자의 실행 위치 영향을 최소화하기 위해 %~dp0 상대경로 매크로 기반으로 절대경로 추출 방식을 채택"
+    ],
+    "unresolved_items": []
+  },
+  "test_commands": [
+    {
+      "name": "backend-tests",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 600,
+      "persist": true
+    },
+    {
+      "name": "frontend-build",
+      "command": [
+        "npm.cmd",
+        "run",
+        "build"
+      ],
+      "cwd": "src/frontend",
+      "timeout_seconds": 600,
+      "persist": true
+    }
+  ],
+  "model_mismatch": true,
+  "actual_model": "Gemini 3.5 Flash",
+  "harness_final_authority": true
+}

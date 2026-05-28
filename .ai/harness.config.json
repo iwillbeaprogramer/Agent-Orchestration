@@ -117,6 +117,16 @@
                     "build"
                 ],
                 "cwd": "src/frontend"
+            },
+            {
+                "name": "backend-tests",
+                "command": [
+                    "python",
+                    "-m",
+                    "pytest",
+                    "tests"
+                ],
+                "cwd": "."
             }
         ]
     }
