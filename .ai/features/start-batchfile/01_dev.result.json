@@ -1,0 +1,50 @@
+{
+  "status": "PASS",
+  "next_stage": "02_verify",
+  "human_gate_required": false,
+  "blocking_reason": "",
+  "risk_level": "low",
+  "harness_commit_required": true,
+  "commit_created_by_model": false,
+  "commit_mode_suggestion": "create",
+  "commit_message_suggestion": "start-batchfile[20260528-161012][01_develop]",
+  "develop_base_commit": "1251eb84b69737a39554b0ed75c5e36f08004a8c",
+  "changed_files": [
+    "src/start.bat",
+    "src/stop.bat",
+    "tests/test_batch_scripts.py",
+    ".ai/features/start-batchfile/01_dev.md",
+    ".ai/features/start-batchfile/01_dev.result.json"
+  ],
+  "produced_files": [
+    ".ai/features/start-batchfile/01_dev.md",
+    ".ai/features/start-batchfile/01_dev.result.json"
+  ],
+  "test_commands": [
+    "pytest"
+  ],
+  "verification_summary": "pytest passed with 9 tests. The CMD findstr port lookup pattern was checked. stop.bat was not executed because ports 8000 and 5173 were already occupied by running local processes.",
+  "harness_commit_blocking_reason": "",
+  "model_mismatch": true,
+  "actual_model": "Codex",
+  "history_notes": {
+    "implemented": [
+      "Added src/start.bat to start backend and frontend from src-relative directories in separate CMD windows.",
+      "Added src/stop.bat to find LISTENING PIDs on ports 8000 and 5173 and terminate them with taskkill.",
+      "Added pytest coverage for the batch file contract."
+    ],
+    "risks": [
+      "stop.bat terminates by port, so an unrelated local process on port 8000 or 5173 can be stopped.",
+      "Full manual start and browser verification remains for the verify stage."
+    ],
+    "future_improvements": [
+      "If needed, stop.bat can later add working-directory filtering to reduce unrelated process termination risk."
+    ],
+    "decisions": [
+      "Kept the scope to Windows .bat files under src and did not add PowerShell or root-level helper scripts.",
+      "Used %~dp0 so the scripts work regardless of the current shell directory.",
+      "Avoided executing stop.bat during development because the target ports were already occupied by local processes."
+    ],
+    "unresolved_items": []
+  }
+}
