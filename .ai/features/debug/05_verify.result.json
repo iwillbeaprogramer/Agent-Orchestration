@@ -1,0 +1,59 @@
+{
+  "status": "PASS",
+  "next_stage": "06_document",
+  "human_gate_required": false,
+  "blocking_reason": "",
+  "risk_level": "medium",
+  "produced_files": [
+    ".ai/features/debug/05_verify.md",
+    ".ai/features/debug/05_verify.result.json"
+  ],
+  "changed_files": [
+    ".ai/features/debug/05_verify.md",
+    ".ai/features/debug/05_verify.result.json"
+  ],
+  "harness_commit_required": true,
+  "commit_created_by_model": false,
+  "commit_message_suggestion": "debug[20260528-163245][05_verify]",
+  "model_mismatch": true,
+  "actual_model": "Gemini 3.5 Flash",
+  "harness_final_authority": true,
+  "test_commands": [
+    {
+      "name": "backend-tests",
+      "command": ["python", "-m", "pytest", "tests"],
+      "cwd": ".",
+      "timeout_seconds": 600,
+      "persist": true
+    },
+    {
+      "name": "frontend-build",
+      "command": ["npm.cmd", "run", "build"],
+      "cwd": "src/frontend",
+      "timeout_seconds": 600,
+      "persist": true
+    }
+  ],
+  "history_notes": {
+    "implemented": [
+      "야후 파이낸스 v8 API 연동을 통한 최신 시장 데이터 수집",
+      "ThreadPoolExecutor를 사용한 18개 심볼 병렬 처리",
+      "60초 메모리 캐시 및 5초 타임아웃을 통한 Rate limit 및 속도 완화",
+      "JPY/KRW 100엔 스케일링 보정",
+      "실패 개별 항목 unavailable fallback 처리"
+    ],
+    "risks": [
+      "Yahoo Finance API의 비인증 경로 차단 및 응답 스키마 변경 가능성"
+    ],
+    "future_improvements": [
+      "보다 견고한 분산 캐시(예: Redis) 또는 DB 영구화 적용",
+      "제공자 장애 모니터링 메트릭 추가"
+    ],
+    "decisions": [
+      "yfinance 라이브러리 대신 경량 urllib.request 기반 차트 API 적용",
+      "JPY/KRW 환율 100배 스케일 변환",
+      "전체 제공자 장애 시 안전한 500 JSON 오류 반환"
+    ],
+    "unresolved_items": []
+  }
+}
