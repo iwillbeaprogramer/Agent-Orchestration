@@ -1,0 +1,51 @@
+{
+    "schema_version": 1,
+    "features": [
+        {
+            "schema_version": 1,
+            "event_id": "20260528153015-project-initialize-full",
+            "feature": "project-initialize",
+            "pipeline": "full",
+            "status": "complete",
+            "created_at": "2026-05-28T15:30:15",
+            "completed_at": "2026-05-28T16:04:09",
+            "request_summary": "난 주식 대시보드를 만들고싶어. 화면은 React 백엔드는 FastAPI로 구성해줘. 화면구성은 일단 미국의 대표지수/한국의 대표지수/ 기타국의 대표지수/ 환율 이 한번에 보였으면 좋겠어. 좀 보기좋게 나누긴 해야겠지.",
+            "verification": "PASS",
+            "verification_source": ".ai/runs/project-initialize/verification/latest.json",
+            "risk_level": "low",
+            "feature_dir": ".ai/features/project-initialize",
+            "run_dir": ".ai/runs/project-initialize",
+            "doc": ".ai/docs/project-initialize_명세서.docx",
+            "commits": {
+                "02_develop": "a453cf72dee482542a4b004760eea8383bfb2369",
+                "04_fix": "3b846a6070e7f9047c68584b39f1d1dae3004bf6",
+                "05_verify": "f9ef04c01249399189f6db9ad7cc11e9d37955a9"
+            },
+            "implemented": [
+                "React 프론트엔드와 FastAPI 백엔드 기반 주식/시장 대시보드 초기 스펙을 확정했다.",
+                "미국 대표지수, 한국 대표지수, 기타국 대표지수, 환율 섹션의 기본 표시 대상을 정의했다.",
+                "외부 데이터 제공자는 어댑터 인터페이스 뒤에 두고 초기 구현은 무자격 증명 공개 데이터 또는 목 데이터로 시작하도록 정했다.",
+                "프로젝트 계약의 경로 제약을 철저히 준수하는 React 및 FastAPI 하이브리드 디렉토리 구조 수립",
+                "API 키 노출이나 외부 의존성 제약 없이 즉시 구동될 수 있는 MockMarketDataAdapter 설계",
+                "Pydantic v2 유효성 검증을 통한 NaN 및 Infinity 수치의 안전한 null(None) 정규화 명세",
+                "가독성과 심미성을 극대화한 Operational Dark Theme 및 Glassmorphism UI 스타일링 정의",
+                "FastAPI 대시보드 API와 헬스 체크 엔드포인트를 추가했다."
+            ],
+            "important_followups": [
+                "실제 데이터 제공자 확정 후 어댑터를 교체한다.",
+                "사용자 설정 기반 지수/환율 목록 편집 기능을 추가한다.",
+                "차트, 뉴스, 관심종목, 알림 기능을 후속 기능으로 확장한다.",
+                "차후 유료/무료 실제 시장 데이터 제공업체 API(실데이터) 연동 어댑터 구현",
+                "실시간 주가 업데이트가 가능한 WebSocket 또는 SSE(Server-Sent Events) 아키텍처 도입"
+            ],
+            "important_decisions": [
+                "feature_name_locked 정책에 따라 기능명은 project-initialize로 유지했다.",
+                "defaults_mode 정책에 따라 추가 질문 없이 권장 기본값으로 스펙을 확정했다.",
+                "초기 범위는 단일 대시보드 화면과 집계 API로 제한했다.",
+                "실시간 스트리밍은 제외하고 HTTP 조회/새로고침 중심으로 정의했다.",
+                "위험도는 새 의존성 가능성과 초기 프로젝트 구성 범위를 반영해 high로 판단했다."
+            ]
+        }
+    ],
+    "updated_at": "2026-05-28T16:04:09"
+}

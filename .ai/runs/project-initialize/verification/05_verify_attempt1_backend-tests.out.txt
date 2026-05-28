@@ -1,0 +1,11 @@
+============================= test session starts =============================
+platform win32 -- Python 3.13.9, pytest-8.4.2, pluggy-1.5.0
+rootdir: D:\test\vibe-coding-toolkit\Agent Orchestration
+plugins: anyio-4.10.0
+collected 7 items
+
+tests\backend\test_adapters.py ..                                        [ 28%]
+tests\backend\test_api.py ...                                            [ 71%]
+tests\backend\test_schemas.py ..                                         [100%]
+
+============================== 7 passed in 0.56s ==============================
