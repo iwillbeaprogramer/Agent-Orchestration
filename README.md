@@ -610,7 +610,13 @@ NEEDS_USER  사용자 판단 필요
     "path/to/file"
   ],
   "test_commands": [
-    "your test command"
+    {
+      "name": "project_tests",
+      "command": ["python", "-m", "pytest", "tests"],
+      "cwd": ".",
+      "timeout_seconds": 600,
+      "persist": true
+    }
   ],
   "verification_summary": {
     "status": "PASS"
@@ -681,6 +687,54 @@ verify stage에서 모델이 `PASS`라고 해도, 하네스 검증 명령이 실
 ```
 
 각 명령의 stdout/stderr도 같은 폴더에 저장됩니다.
+
+---
+
+### Dynamic verify commands
+
+Verify stages may discover project-specific tests or builds that should become mandatory for future runs. In that case, the verify result JSON can include `test_commands` or `recommended_verification_commands`.
+
+The harness handles those commands as follows:
+
+1. It always runs the static `.ai/harness.config.json` `verification.commands` first.
+2. It parses `test_commands` from the verify result JSON.
+3. It accepts only safe command arrays, not shell strings.
+4. It skips commands that are already configured with the same `cwd + command`.
+5. It reruns accepted non-duplicate commands in the same verify run.
+6. If any accepted command fails, verify becomes `FAIL`.
+7. If all verification commands pass, accepted non-duplicate commands with `persist: true` are appended to `.ai/harness.config.json`.
+
+Example verify result field:
+
+```json
+{
+  "test_commands": [
+    {
+      "name": "backend_tests",
+      "command": ["python", "-m", "pytest", "tests\\backend"],
+      "cwd": ".",
+      "timeout_seconds": 600,
+      "persist": true
+    },
+    {
+      "name": "frontend_tests",
+      "command": ["npm.cmd", "test"],
+      "cwd": "src\\frontend",
+      "timeout_seconds": 600,
+      "persist": true
+    }
+  ]
+}
+```
+
+Dynamic command safety rules:
+
+- Allowed commands: `python -m pytest ...`, `npm.cmd test`, `npm.cmd run build`, `dotnet test`, `dotnet build`.
+- `command` must be a JSON array. Shell strings are rejected.
+- `cwd` must stay inside the repository.
+- Windows npm commands should use `npm.cmd`, not `npm`.
+- Shell wrappers such as `powershell`, `cmd /c`, `bash -c`, and `sh -c` are rejected.
+- Destructive, network, or Git-mutating commands such as `rm`, `del`, `curl`, `git push`, `git reset`, `git clean`, and `git checkout` are rejected.
 
 ---
 

@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Any
 
 
+PC_CANDIDATE_EXTRACTION_MAX_ATTEMPTS = 3
+
+
 def _history_summary_path() -> Path:
     return HISTORY_DIR / "summary.md"
 
@@ -1069,7 +1072,10 @@ def _pc_candidate_source_artifact_text(feature: str, max_chars_per_file: int = 8
     return "\n".join(blocks).strip() or "- none"
 
 
-def _build_pc_candidate_extraction_prompt(state: dict[str, Any]) -> str:
+def _build_pc_candidate_extraction_prompt(
+    state: dict[str, Any],
+    output_json_path: Path | None = None,
+) -> str:
     feature = str(state["feature_name"])
     stage_results = load_history_stage_results(feature)
     changed_files = collect_history_changed_files(state, stage_results)
@@ -1082,13 +1088,27 @@ def _build_pc_candidate_extraction_prompt(state: dict[str, Any]) -> str:
         for item in existing_store.get("candidates", [])
         if item.get("rule_candidate")
     ][-50:]
+    capture_instructions = ""
+    if output_json_path is not None:
+        capture_instructions = f"""
+
+## Required Capture File
+Some providers do not reliably return print-mode text through stdout.
+After producing the JSON object, write the exact same JSON object to this file:
+
+- relative_path: {rel(output_json_path)}
+- absolute_path: {output_json_path.resolve()}
+
+Create parent directories if needed. Do not write any other files.
+"""
 
     return f"""# Project Contract Candidate Extraction
 
 You are extracting Project Contract candidates after a completed local AI development pipeline.
 
 This is not a normal feature implementation task.
-Do not edit files. Return only a JSON object.
+Do not edit repository source files, stage outputs, or project documentation.
+Return only a JSON object in stdout. If a Required Capture File is specified, also write the same JSON object there.
 
 ## Goal
 Find rules that should become candidates for the long-term Project Contract.
@@ -1114,6 +1134,7 @@ The Project Contract is observational: it is based on conventions and decisions 
 
 ## Source Artifacts
 {artifacts_text}
+{capture_instructions}
 
 ## Candidate Criteria
 Create a candidate only when the rule is clearly worth managing as a project-wide contract.
@@ -1230,28 +1251,7 @@ def _append_pc_candidates(candidates: list[dict[str, Any]], state: dict[str, Any
     }
 
 
-def _extract_project_contract_candidates(state: dict[str, Any]) -> dict[str, Any]:
-    if not should_extract_pc_candidates(state):
-        return {"status": "skipped", "reason": "pipeline does not extract PC candidates"}
-
-    feature = str(state["feature_name"])
-    provider = provider_for_stage(PC_REVIEW_STAGE, state)
-    prompt = build_pc_candidate_extraction_prompt(state)
-    log_event(
-        state,
-        "pc_candidate_extraction_started",
-        "extracting project contract candidates",
-        stage=PC_REVIEW_STAGE,
-        provider=provider,
-    )
-    result = run_text_provider_prompt(
-        provider,
-        prompt,
-        logs_dir=run_dir(feature) / "logs",
-        log_prefix="pc_candidates",
-        timeout_seconds=3600,
-        performance=state.get("performance"),
-    )
+def _parse_pc_candidate_extraction_result(result: dict[str, Any]) -> list[Any]:
     if result.get("returncode") != 0 or result.get("timed_out"):
         raise HarnessError(
             "PC candidate extraction provider failed. "
@@ -1259,14 +1259,118 @@ def _extract_project_contract_candidates(state: dict[str, Any]) -> dict[str, Any
         )
 
     parsed = parse_result_json_from_text(str(result.get("stdout_text") or ""))
+    if not parsed:
+        raw_output_path = str(result.get("json_output") or "").strip()
+        if raw_output_path:
+            output_path = ROOT / norm_repo_path(raw_output_path)
+            try:
+                output_text = output_path.read_text(encoding="utf-8")
+            except OSError:
+                output_text = ""
+            if output_text:
+                parsed = parse_result_json_from_text(output_text)
     raw_candidates = parsed.get("candidates") if isinstance(parsed, dict) else None
     if raw_candidates is None:
         raise HarnessError(
             "PC candidate extraction did not return a JSON object with a candidates list. "
-            f"stdout={result.get('stdout')}"
+            f"stdout={result.get('stdout')} json_output={result.get('json_output')}"
         )
     if not isinstance(raw_candidates, list):
         raise HarnessError("PC candidate extraction field 'candidates' must be a list.")
+    return raw_candidates
+
+
+def _pc_candidate_extraction_warning(
+    provider: str,
+    failures: list[dict[str, Any]],
+) -> dict[str, Any]:
+    return {
+        "status": "WARN",
+        "provider": provider,
+        "attempts": len(failures),
+        "raw_candidate_count": 0,
+        "candidate_count": 0,
+        "filtered_out_count": 0,
+        "recorded_count": 0,
+        "candidate_ids": [],
+        "candidates_path": rel(pc_candidates_path()),
+        "warning": "Project Contract candidate extraction failed after retries.",
+        "failures": failures,
+    }
+
+
+def _extract_project_contract_candidates(state: dict[str, Any]) -> dict[str, Any]:
+    if not should_extract_pc_candidates(state):
+        return {"status": "skipped", "reason": "pipeline does not extract PC candidates"}
+
+    feature = str(state["feature_name"])
+    provider = provider_for_stage(PC_REVIEW_STAGE, state)
+    failures: list[dict[str, Any]] = []
+    result: dict[str, Any] = {}
+    raw_candidates: list[Any] | None = None
+
+    for attempt in range(1, PC_CANDIDATE_EXTRACTION_MAX_ATTEMPTS + 1):
+        attempt_result: dict[str, Any] = {}
+        capture_path = run_dir(feature) / "logs" / f"pc_candidates_{provider}_attempt{attempt}_result.json"
+        capture_path.parent.mkdir(parents=True, exist_ok=True)
+        if capture_path.exists():
+            capture_path.unlink()
+        prompt = build_pc_candidate_extraction_prompt(state, capture_path)
+        log_event(
+            state,
+            "pc_candidate_extraction_started",
+            "extracting project contract candidates",
+            stage=PC_REVIEW_STAGE,
+            provider=provider,
+            attempt=attempt,
+            max_attempts=PC_CANDIDATE_EXTRACTION_MAX_ATTEMPTS,
+        )
+        try:
+            attempt_result = run_text_provider_prompt(
+                provider,
+                prompt,
+                logs_dir=run_dir(feature) / "logs",
+                log_prefix="pc_candidates",
+                timeout_seconds=3600,
+                performance=state.get("performance"),
+            )
+            attempt_result["json_output"] = rel(capture_path)
+            result = attempt_result
+            raw_candidates = parse_pc_candidate_extraction_result(result)
+            break
+        except Exception as exc:
+            failures.append(
+                {
+                    "attempt": attempt,
+                    "reason": str(exc),
+                    "stdout": attempt_result.get("stdout"),
+                    "stderr": attempt_result.get("stderr"),
+                    "meta": attempt_result.get("meta"),
+                    "json_output": attempt_result.get("json_output") or rel(capture_path),
+                }
+            )
+            log_event(
+                state,
+                "pc_candidate_extraction_attempt_failed",
+                str(exc),
+                stage=PC_REVIEW_STAGE,
+                provider=provider,
+                attempt=attempt,
+                max_attempts=PC_CANDIDATE_EXTRACTION_MAX_ATTEMPTS,
+            )
+
+    if raw_candidates is None:
+        extraction = pc_candidate_extraction_warning(provider, failures)
+        state["pc_candidate_extraction"] = extraction
+        log_event(
+            state,
+            "pc_candidate_extraction_warning",
+            "project contract candidate extraction failed after retries; continuing run",
+            stage=PC_REVIEW_STAGE,
+            provider=provider,
+            attempts=len(failures),
+        )
+        return extraction
 
     created_at = iso_now()
     normalized = [
@@ -1291,6 +1395,7 @@ def _extract_project_contract_candidates(state: dict[str, Any]) -> dict[str, Any
         "stdout": result.get("stdout"),
         "stderr": result.get("stderr"),
         "meta": result.get("meta"),
+        "json_output": result.get("json_output"),
     }
     state["pc_candidate_extraction"] = extraction
     log_event(
@@ -1298,6 +1403,7 @@ def _extract_project_contract_candidates(state: dict[str, Any]) -> dict[str, Any
         "pc_candidate_extraction_completed",
         "project contract candidates extracted",
         stage=PC_REVIEW_STAGE,
+        provider=provider,
         raw_candidate_count=len(raw_candidates),
         candidate_count=len(normalized),
         filtered_out_count=len(raw_candidates) - len(normalized),
@@ -1350,6 +1456,8 @@ _INTERNAL_NAMES = {
     'build_pc_candidate_extraction_prompt': _build_pc_candidate_extraction_prompt,
     'normalize_pc_candidate': _normalize_pc_candidate,
     'append_pc_candidates': _append_pc_candidates,
+    'parse_pc_candidate_extraction_result': _parse_pc_candidate_extraction_result,
+    'pc_candidate_extraction_warning': _pc_candidate_extraction_warning,
     'extract_project_contract_candidates': _extract_project_contract_candidates,
 }
 

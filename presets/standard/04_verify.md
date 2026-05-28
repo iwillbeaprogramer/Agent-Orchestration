@@ -37,6 +37,7 @@ default_next_stage_on_fail: "03_fix"
 - 프로덕션 코드는 루트 `src/` 하위 파일만 의미한다.
 - 테스트 코드는 루트 `tests/` 하위 파일만 의미한다.
 - 새 테스트 파일은 `tests/` 하위에만 만든다. `src/` 하위에 테스트 파일을 만들지 않는다.
+- `requirements.txt`, `run.ps1`, 설정 파일, 의존성 파일, 실행 스크립트 같은 보조 파일도 루트에 만들지 않는다. 필요하면 반드시 `src/` 또는 `tests/` 하위에 둔다.
 - `vendor/`, `packages/`, `dist/`, `build/` 등 외부/생성 산출물 디렉터리는 계획/수정/검증 대상에서 제외하고, 필요하면 생성물 또는 외부 산출물로만 기록한다.
 
 ## 실행 정책
@@ -180,10 +181,53 @@ default_next_stage_on_fail: "03_fix"
 - commit_created_by_model: false
 - commit_message_suggestion:
 - test_commands:
+  - name: safe_command_name
+    command: ["python", "-m", "pytest", "tests"]
+    cwd: "."
+    timeout_seconds: 600
+    persist: true
 - model_mismatch: false
 - actual_model:
 - harness_final_authority: true
 ```
+
+---
+
+## Dynamic Harness Verification Commands
+
+If this verify stage runs project-specific tests or builds beyond the static commands in `.ai/harness.config.json`, record every command that should become mandatory in the stage result JSON field `test_commands`.
+
+`test_commands` must be a JSON array of objects:
+
+```json
+[
+  {
+    "name": "backend_tests",
+    "command": ["python", "-m", "pytest", "tests\\backend"],
+    "cwd": ".",
+    "timeout_seconds": 600,
+    "persist": true
+  },
+  {
+    "name": "frontend_tests",
+    "command": ["npm.cmd", "test"],
+    "cwd": "src\\frontend",
+    "timeout_seconds": 600,
+    "persist": true
+  }
+]
+```
+
+Rules:
+
+- `command` must be an argument array. Do not write a shell string.
+- Use only safe verification/build commands: `python -m pytest ...`, `npm.cmd test`, `npm.cmd run build`, `dotnet test`, or `dotnet build`.
+- On Windows, use `npm.cmd`, not `npm`.
+- `cwd` must be omitted or point inside this repository.
+- Do not use shell wrappers such as `powershell`, `cmd /c`, `bash -c`, or `sh -c`.
+- Do not include destructive, network, or Git-mutating commands such as `rm`, `del`, `curl`, `git push`, `git reset`, `git clean`, or `git checkout`.
+- Set `persist: true` for commands that should be added to `.ai/harness.config.json` after they pass. Set `persist: false` only for one-off diagnostics.
+- The harness reruns safe non-duplicate `test_commands` after the configured verification commands. Rejected commands or failed commands make verify fail. Passed non-duplicate commands with `persist: true` are appended to `.ai/harness.config.json`.
 
 ---
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import time
@@ -8,6 +9,24 @@ from pathlib import Path
 from typing import Any
 
 from .text import boolish, slugify
+
+
+DYNAMIC_VERIFICATION_FIELDS = ("test_commands", "recommended_verification_commands")
+SHELL_WRAPPER_EXECUTABLES = {"cmd", "cmd.exe", "powershell", "powershell.exe", "pwsh", "pwsh.exe", "bash", "sh", "wsl"}
+DANGEROUS_EXECUTABLES = {
+    "curl",
+    "curl.exe",
+    "wget",
+    "wget.exe",
+    "rm",
+    "del",
+    "erase",
+    "remove-item",
+    "rmdir",
+    "rd",
+}
+DANGEROUS_GIT_SUBCOMMANDS = {"push", "reset", "clean", "checkout", "restore", "rebase"}
+SHELL_CONTROL_TOKENS = {"|", "||", "&&", "&", ";", "<", ">", ">>", "2>", "2>>"}
 
 
 def configured_verification_commands(ctx: dict[str, Any], feature: str) -> tuple[list[dict[str, Any]], bool]:
@@ -79,12 +98,474 @@ def display_cwd(ctx: dict[str, Any], path: Path) -> str:
     return str(path)
 
 
-def run_harness_verification(ctx: dict[str, Any], state: dict[str, Any]) -> dict[str, Any]:
+def _path_identity(path: Path) -> str:
+    try:
+        value = str(path.resolve())
+    except OSError:
+        value = str(path.absolute())
+    return os.path.normcase(value)
+
+
+def _command_identity(command: list[str], cwd: Path) -> tuple[str, tuple[str, ...]]:
+    return (_path_identity(cwd), tuple(str(part) for part in command))
+
+
+def _executable_name(command: list[str]) -> str:
+    if not command:
+        return ""
+    return Path(str(command[0])).name.lower()
+
+
+def _is_inside_repo(ctx: dict[str, Any], path: Path) -> bool:
+    try:
+        resolved = path.resolve()
+        root = ctx["ROOT"].resolve()
+        return resolved == root or root in resolved.parents
+    except OSError:
+        return False
+
+
+def _resolve_dynamic_cwd(ctx: dict[str, Any], feature: str, raw_cwd: Any) -> tuple[Path | None, str | None]:
+    root = ctx["ROOT"]
+    if raw_cwd is None or str(raw_cwd).strip() == "":
+        return root, None
+    rendered = ctx["expand_runtime_placeholders"](raw_cwd, feature)
+    cwd = Path(rendered)
+    if not cwd.is_absolute():
+        cwd = root / cwd
+    return cwd, str(raw_cwd)
+
+
+def _looks_like_path_arg(value: str) -> bool:
+    if not value or value.startswith("-"):
+        return False
+    return (
+        value in {".", ".."}
+        or value.startswith(".\\")
+        or value.startswith("./")
+        or "\\" in value
+        or "/" in value
+        or Path(value).is_absolute()
+    )
+
+
+def _validate_dynamic_command_safety(
+    ctx: dict[str, Any],
+    command: list[str],
+    cwd: Path,
+) -> str | None:
+    if not _is_inside_repo(ctx, cwd):
+        return f"cwd is outside the repository: {cwd}"
+    if not cwd.exists() or not cwd.is_dir():
+        return f"cwd does not exist or is not a directory: {cwd}"
+
+    executable = _executable_name(command)
+    if executable in SHELL_WRAPPER_EXECUTABLES:
+        return f"shell wrapper commands are not allowed: {command[0]}"
+    if executable in DANGEROUS_EXECUTABLES:
+        return f"destructive or network command is not allowed: {command[0]}"
+    if executable in {"npm", "npm.exe"}:
+        return "use npm.cmd for promoted verification commands on Windows"
+    if any(str(part).strip() in SHELL_CONTROL_TOKENS for part in command):
+        return "shell control operators are not allowed in command arrays"
+
+    lowered = [str(part).lower() for part in command]
+    if executable == "git" and len(lowered) > 1 and lowered[1] in DANGEROUS_GIT_SUBCOMMANDS:
+        return f"git {lowered[1]} is not allowed in promoted verification commands"
+    if any(part in DANGEROUS_EXECUTABLES for part in lowered[1:]):
+        return "destructive or network command token is not allowed"
+
+    allowed = False
+    if executable in {"python", "python.exe", "py", "py.exe"}:
+        allowed = len(command) >= 3 and command[1] == "-m" and command[2] == "pytest"
+    elif executable == "npm.cmd":
+        allowed = len(command) >= 2 and (
+            command[1] == "test"
+            or (len(command) >= 3 and command[1] == "run" and command[2] == "build")
+        )
+    elif executable in {"dotnet", "dotnet.exe"}:
+        allowed = len(command) >= 2 and command[1] in {"test", "build"}
+    if not allowed:
+        return (
+            "command is not in the dynamic verification allowlist "
+            "(python -m pytest, npm.cmd test, npm.cmd run build, dotnet test, dotnet build)"
+        )
+
+    root = ctx["ROOT"].resolve()
+    for part in command[1:]:
+        if not _looks_like_path_arg(str(part)):
+            continue
+        arg_path = Path(str(part))
+        candidate = arg_path if arg_path.is_absolute() else cwd / arg_path
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            resolved = candidate.absolute()
+        if resolved != root and root not in resolved.parents:
+            return f"command path argument points outside the repository: {part}"
+    return None
+
+
+def _dynamic_command_rejection(source: str, index: int, reason: str, item: Any = None) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "source": source,
+        "index": index,
+        "reason": reason,
+    }
+    if item is not None:
+        entry["item"] = item
+    return entry
+
+
+def _coerce_dynamic_command(
+    ctx: dict[str, Any],
+    feature: str,
+    item: Any,
+    source: str,
+    index: int,
+    timeout_default: int,
+    *,
+    validate_safety: bool = True,
+) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    raw_cwd: Any = None
+    persist = True
+    raw_name = f"{source}_{index}"
+    timeout_seconds = timeout_default
+
+    if isinstance(item, list):
+        raw_command = item
+    elif isinstance(item, dict):
+        raw_name = str(item.get("name") or raw_name)
+        raw_command = item.get("command")
+        raw_cwd = item.get("cwd")
+        persist = boolish(item.get("persist", True))
+        if item.get("timeout_seconds") is not None:
+            try:
+                timeout_seconds = int(item.get("timeout_seconds"))
+            except (TypeError, ValueError):
+                return None, _dynamic_command_rejection(source, index, "timeout_seconds must be an integer", item)
+    else:
+        return None, _dynamic_command_rejection(source, index, "entry must be an object or command array", item)
+
+    if not isinstance(raw_command, list):
+        return None, _dynamic_command_rejection(source, index, "command must be an array, not a shell string", item)
+    if not raw_command:
+        return None, _dynamic_command_rejection(source, index, "command array is empty", item)
+    if len(raw_command) > 64:
+        return None, _dynamic_command_rejection(source, index, "command array is too long", item)
+    if timeout_seconds <= 0:
+        return None, _dynamic_command_rejection(source, index, "timeout_seconds must be greater than zero", item)
+
+    command = [ctx["expand_runtime_placeholders"](part, feature) for part in raw_command]
+    if any(str(part).strip() == "" for part in command):
+        return None, _dynamic_command_rejection(source, index, "command contains an empty argument", item)
+
+    cwd, config_cwd = _resolve_dynamic_cwd(ctx, feature, raw_cwd)
+    if cwd is None:
+        return None, _dynamic_command_rejection(source, index, "cwd is invalid", item)
+
+    if validate_safety:
+        safety_error = _validate_dynamic_command_safety(ctx, command, cwd)
+        if safety_error:
+            return None, _dynamic_command_rejection(source, index, safety_error, item)
+
+    name = slugify(raw_name)
+    spec = {
+        "name": name,
+        "command": command,
+        "raw_command": [str(part) for part in raw_command],
+        "cwd": cwd,
+        "config_cwd": config_cwd,
+        "timeout_seconds": timeout_seconds,
+        "persist": persist,
+        "source": source,
+        "identity": _command_identity(command, cwd),
+    }
+    return spec, None
+
+
+def dynamic_verification_commands(
+    ctx: dict[str, Any],
+    feature: str,
+    result: dict[str, Any] | None,
+    configured_commands: list[dict[str, Any]],
+) -> dict[str, Any]:
+    timeout_default = int(ctx["DEFAULT_VERIFY_COMMAND_TIMEOUT_SECONDS"])
+    try:
+        config = ctx["load_config"]()
+        verification = config.get("verification", {})
+        if isinstance(verification, dict):
+            timeout_default = int(verification.get("timeout_seconds", timeout_default))
+    except Exception:
+        pass
+
+    plan: dict[str, Any] = {
+        "commands": [],
+        "rejected": [],
+        "skipped": [],
+        "fields": [],
+    }
+    if not isinstance(result, dict):
+        return plan
+
+    known_identities = {
+        _command_identity(command_spec["command"], Path(command_spec["cwd"]))
+        for command_spec in configured_commands
+    }
+    seen_dynamic: set[tuple[str, tuple[str, ...]]] = set()
+
+    for field in DYNAMIC_VERIFICATION_FIELDS:
+        if field not in result:
+            continue
+        plan["fields"].append(field)
+        raw_items = result.get(field)
+        if raw_items in (None, ""):
+            continue
+        if not isinstance(raw_items, list):
+            plan["rejected"].append(
+                _dynamic_command_rejection(field, 0, f"{field} must be a list", raw_items)
+            )
+            continue
+        for index, item in enumerate(raw_items, start=1):
+            spec, rejection = _coerce_dynamic_command(
+                ctx,
+                feature,
+                item,
+                field,
+                index,
+                timeout_default,
+                validate_safety=False,
+            )
+            if rejection:
+                plan["rejected"].append(rejection)
+                continue
+            assert spec is not None
+            identity = spec["identity"]
+            if identity in known_identities:
+                plan["skipped"].append(
+                    {
+                        "source": field,
+                        "index": index,
+                        "name": spec["name"],
+                        "reason": "already configured",
+                        "command": spec["command"],
+                        "cwd": ctx["display_cwd"](Path(spec["cwd"])),
+                    }
+                )
+                continue
+            safety_error = _validate_dynamic_command_safety(ctx, spec["command"], Path(spec["cwd"]))
+            if safety_error:
+                plan["rejected"].append(_dynamic_command_rejection(field, index, safety_error, item))
+                continue
+            if identity in seen_dynamic:
+                plan["skipped"].append(
+                    {
+                        "source": field,
+                        "index": index,
+                        "name": spec["name"],
+                        "reason": "duplicate dynamic command in verify result",
+                        "command": spec["command"],
+                        "cwd": ctx["display_cwd"](Path(spec["cwd"])),
+                    }
+                )
+                continue
+            seen_dynamic.add(identity)
+            plan["commands"].append(spec)
+    return plan
+
+
+def _promotable_config_entry(ctx: dict[str, Any], command_spec: dict[str, Any]) -> dict[str, Any]:
+    entry: dict[str, Any] = {
+        "name": command_spec["name"],
+        "command": command_spec["raw_command"],
+    }
+    config_cwd = command_spec.get("config_cwd")
+    if config_cwd:
+        entry["cwd"] = config_cwd
+    timeout_seconds = int(command_spec.get("timeout_seconds", 0) or 0)
+    default_timeout = int(ctx["DEFAULT_VERIFY_COMMAND_TIMEOUT_SECONDS"])
+    try:
+        verification = ctx["load_config"]().get("verification", {})
+        if isinstance(verification, dict):
+            default_timeout = int(verification.get("timeout_seconds", default_timeout))
+    except Exception:
+        pass
+    if timeout_seconds and timeout_seconds != default_timeout:
+        entry["timeout_seconds"] = timeout_seconds
+    return entry
+
+
+def _configured_command_identities(ctx: dict[str, Any], feature: str) -> set[tuple[str, tuple[str, ...]]]:
+    commands, _ = ctx["configured_verification_commands"](feature)
+    return {_command_identity(item["command"], Path(item["cwd"])) for item in commands}
+
+
+def promote_dynamic_verification_commands(
+    ctx: dict[str, Any],
+    feature: str,
+    command_specs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    promotable = [item for item in command_specs if item.get("persist", True)]
+    if not promotable:
+        return []
+
+    config = ctx["load_config"]()
+    if not isinstance(config, dict):
+        raise ctx["HarnessError"]("harness config must be an object.")
+    verification = config.get("verification")
+    if verification is None or verification is False:
+        verification = {
+            "enabled": True,
+            "required": True,
+            "timeout_seconds": ctx["DEFAULT_VERIFY_COMMAND_TIMEOUT_SECONDS"],
+            "commands": [],
+        }
+        config["verification"] = verification
+    if not isinstance(verification, dict):
+        raise ctx["HarnessError"]("verification config must be an object before promotion.")
+    commands = verification.setdefault("commands", [])
+    if not isinstance(commands, list):
+        raise ctx["HarnessError"]("verification.commands must be a list before promotion.")
+
+    known = _configured_command_identities(ctx, feature)
+    promoted: list[dict[str, Any]] = []
+    for command_spec in promotable:
+        identity = command_spec["identity"]
+        if identity in known:
+            continue
+        entry = _promotable_config_entry(ctx, command_spec)
+        commands.append(entry)
+        known.add(identity)
+        promoted.append(
+            {
+                "name": entry["name"],
+                "command": entry["command"],
+                "cwd": entry.get("cwd", "."),
+            }
+        )
+
+    if promoted:
+        ctx["write_config"](config)
+    return promoted
+
+
+def run_verification_command(
+    ctx: dict[str, Any],
+    state: dict[str, Any],
+    out_dir: Path,
+    verify_stage: str,
+    attempt: int,
+    command_spec: dict[str, Any],
+) -> dict[str, Any]:
+    name = command_spec["name"]
+    command = command_spec["command"]
+    cwd = Path(command_spec["cwd"])
+    timeout_seconds = int(command_spec["timeout_seconds"])
+    stdout_path = out_dir / f"{verify_stage}_attempt{attempt}_{name}.out.txt"
+    stderr_path = out_dir / f"{verify_stage}_attempt{attempt}_{name}.err.txt"
+    entry: dict[str, Any] = {
+        "name": name,
+        "source": command_spec.get("source", "configured"),
+        "command": command,
+        "cwd": ctx["display_cwd"](cwd),
+        "timeout_seconds": timeout_seconds,
+        "returncode": None,
+        "elapsed_seconds": None,
+        "passed": False,
+        "timed_out": False,
+        "stdout": ctx["rel"](stdout_path),
+        "stderr": ctx["rel"](stderr_path),
+    }
+
+    executable = ctx["resolve_executable"](command)
+    if not executable:
+        entry["error"] = f"Executable not found: {command[0]}"
+        stdout_path.write_text("", encoding="utf-8")
+        stderr_path.write_text(entry["error"] + "\n", encoding="utf-8")
+        ctx["log_event"](
+            state,
+            "harness_verification_command_failed",
+            entry["error"],
+            stage=verify_stage,
+            command=name,
+        )
+        return entry
+
+    started = time.time()
+    try:
+        proc = subprocess.run(
+            command,
+            cwd=cwd,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=timeout_seconds,
+            check=False,
+        )
+        elapsed = round(time.time() - started, 2)
+        stdout_path.write_text(proc.stdout or "", encoding="utf-8")
+        stderr_path.write_text(proc.stderr or "", encoding="utf-8")
+        entry["returncode"] = proc.returncode
+        entry["elapsed_seconds"] = elapsed
+        entry["passed"] = proc.returncode == 0
+    except subprocess.TimeoutExpired as exc:
+        elapsed = round(time.time() - started, 2)
+        stdout = exc.stdout or ""
+        stderr = exc.stderr or ""
+        if isinstance(stdout, bytes):
+            stdout = stdout.decode("utf-8", errors="replace")
+        if isinstance(stderr, bytes):
+            stderr = stderr.decode("utf-8", errors="replace")
+        stdout_path.write_text(str(stdout), encoding="utf-8")
+        stderr_path.write_text(
+            str(stderr) + f"\nTimed out after {timeout_seconds} seconds.\n",
+            encoding="utf-8",
+        )
+        entry["elapsed_seconds"] = elapsed
+        entry["timed_out"] = True
+        entry["error"] = f"Timed out after {timeout_seconds} seconds."
+    except OSError as exc:
+        elapsed = round(time.time() - started, 2)
+        stdout_path.write_text("", encoding="utf-8")
+        stderr_path.write_text(str(exc) + "\n", encoding="utf-8")
+        entry["elapsed_seconds"] = elapsed
+        entry["error"] = str(exc)
+
+    if not entry["passed"]:
+        ctx["log_event"](
+            state,
+            "harness_verification_command_failed",
+            "verification command failed",
+            stage=verify_stage,
+            command=name,
+            returncode=entry.get("returncode"),
+            timed_out=entry.get("timed_out"),
+            stderr=entry.get("stderr"),
+        )
+    return entry
+
+
+def run_harness_verification(
+    ctx: dict[str, Any],
+    state: dict[str, Any],
+    stage_result: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     feature = state["feature_name"]
     verify_stage = ctx["VERIFY_STAGE"]
     stage = state.get("current_stage", verify_stage)
     attempt = int(state.get("attempts", {}).get(verify_stage, 1))
     commands, required = ctx["configured_verification_commands"](feature)
+    verification_enabled = True
+    try:
+        verification_config = ctx["load_config"]().get("verification")
+        if verification_config is False:
+            verification_enabled = False
+        elif isinstance(verification_config, dict) and verification_config.get("enabled", True) is False:
+            verification_enabled = False
+    except Exception:
+        verification_enabled = True
     out_dir = ctx["verification_dir"](feature)
     out_dir.mkdir(parents=True, exist_ok=True)
     started_at = ctx["iso_now"]()
@@ -104,9 +585,42 @@ def run_harness_verification(ctx: dict[str, Any], state: dict[str, Any]) -> dict
         "status": "PASS",
         "commands": [],
         "failed_commands": [],
+        "configured_command_count": len(commands),
+        "dynamic_command_fields": [],
+        "dynamic_commands": [],
+        "skipped_dynamic_commands": [],
+        "rejected_dynamic_commands": [],
+        "promoted_commands": [],
     }
 
-    if not commands:
+    for command_spec in commands:
+        command_spec.setdefault("source", "configured")
+
+    dynamic_plan = (
+        dynamic_verification_commands(ctx, feature, stage_result, commands)
+        if verification_enabled
+        else {"commands": [], "rejected": [], "skipped": [], "fields": []}
+    )
+    dynamic_commands = list(dynamic_plan["commands"])
+    summary["dynamic_command_fields"] = dynamic_plan["fields"]
+    summary["dynamic_commands"] = [
+        {
+            "name": item["name"],
+            "source": item["source"],
+            "command": item["command"],
+            "cwd": ctx["display_cwd"](Path(item["cwd"])),
+            "persist": item.get("persist", True),
+        }
+        for item in dynamic_commands
+    ]
+    summary["skipped_dynamic_commands"] = dynamic_plan["skipped"]
+    summary["rejected_dynamic_commands"] = dynamic_plan["rejected"]
+
+    all_commands = commands + dynamic_commands
+    if dynamic_plan["rejected"]:
+        summary["failed_commands"].append("rejected_dynamic_verification_commands")
+
+    if not all_commands:
         summary["passed"] = not required
         summary["status"] = "FAIL" if required else "SKIPPED"
         summary["failure_reason"] = (
@@ -134,99 +648,34 @@ def run_harness_verification(ctx: dict[str, Any], state: dict[str, Any]) -> dict
     ctx["log_event"](
         state,
         "harness_verification_started",
-        "running configured verification commands",
+        "running verification commands",
         stage=verify_stage,
-        count=len(commands),
+        configured_count=len(commands),
+        dynamic_count=len(dynamic_commands),
+        rejected_dynamic_count=len(dynamic_plan["rejected"]),
     )
 
-    for command_spec in commands:
+    for command_spec in all_commands:
         name = command_spec["name"]
-        command = command_spec["command"]
-        cwd = Path(command_spec["cwd"])
-        timeout_seconds = int(command_spec["timeout_seconds"])
-        stdout_path = out_dir / f"{verify_stage}_attempt{attempt}_{name}.out.txt"
-        stderr_path = out_dir / f"{verify_stage}_attempt{attempt}_{name}.err.txt"
-        entry: dict[str, Any] = {
-            "name": name,
-            "command": command,
-            "cwd": ctx["display_cwd"](cwd),
-            "timeout_seconds": timeout_seconds,
-            "returncode": None,
-            "elapsed_seconds": None,
-            "passed": False,
-            "timed_out": False,
-            "stdout": ctx["rel"](stdout_path),
-            "stderr": ctx["rel"](stderr_path),
-        }
-
-        executable = ctx["resolve_executable"](command)
-        if not executable:
-            entry["error"] = f"Executable not found: {command[0]}"
-            stdout_path.write_text("", encoding="utf-8")
-            stderr_path.write_text(entry["error"] + "\n", encoding="utf-8")
-            summary["commands"].append(entry)
-            summary["failed_commands"].append(name)
-            ctx["log_event"](
-                state,
-                "harness_verification_command_failed",
-                entry["error"],
-                stage=verify_stage,
-                command=name,
-            )
-            continue
-
-        started = time.time()
-        try:
-            proc = subprocess.run(
-                command,
-                cwd=cwd,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                timeout=timeout_seconds,
-                check=False,
-            )
-            elapsed = round(time.time() - started, 2)
-            stdout_path.write_text(proc.stdout or "", encoding="utf-8")
-            stderr_path.write_text(proc.stderr or "", encoding="utf-8")
-            entry["returncode"] = proc.returncode
-            entry["elapsed_seconds"] = elapsed
-            entry["passed"] = proc.returncode == 0
-        except subprocess.TimeoutExpired as exc:
-            elapsed = round(time.time() - started, 2)
-            stdout = exc.stdout or ""
-            stderr = exc.stderr or ""
-            if isinstance(stdout, bytes):
-                stdout = stdout.decode("utf-8", errors="replace")
-            if isinstance(stderr, bytes):
-                stderr = stderr.decode("utf-8", errors="replace")
-            stdout_path.write_text(str(stdout), encoding="utf-8")
-            stderr_path.write_text(
-                str(stderr) + f"\nTimed out after {timeout_seconds} seconds.\n",
-                encoding="utf-8",
-            )
-            entry["elapsed_seconds"] = elapsed
-            entry["timed_out"] = True
-            entry["error"] = f"Timed out after {timeout_seconds} seconds."
-
+        entry = run_verification_command(ctx, state, out_dir, verify_stage, attempt, command_spec)
         summary["commands"].append(entry)
         if not entry["passed"]:
             summary["failed_commands"].append(name)
-            ctx["log_event"](
-                state,
-                "harness_verification_command_failed",
-                "verification command failed",
-                stage=verify_stage,
-                command=name,
-                returncode=entry.get("returncode"),
-                timed_out=entry.get("timed_out"),
-                stderr=entry.get("stderr"),
-            )
 
     summary["passed"] = not summary["failed_commands"]
     summary["status"] = "PASS" if summary["passed"] else "FAIL"
+    if summary["passed"] and dynamic_commands:
+        promoted = promote_dynamic_verification_commands(ctx, feature, dynamic_commands)
+        summary["promoted_commands"] = promoted
+        if promoted:
+            ctx["log_event"](
+                state,
+                "harness_verification_commands_promoted",
+                "promoted passed dynamic verification commands to harness config",
+                stage=verify_stage,
+                count=len(promoted),
+                config=ctx["rel"](ctx["config_path"]()),
+            )
     summary["finished_at"] = ctx["iso_now"]()
     result_path.write_text(
         json.dumps(summary, ensure_ascii=False, indent=2) + "\n",
@@ -257,7 +706,7 @@ def enforce_harness_verify_result(
     if state.get("current_stage") != ctx["VERIFY_STAGE"] or status != "PASS":
         return status, next_stage
 
-    verification = ctx["run_harness_verification"](state)
+    verification = ctx["run_harness_verification"](state, result)
     result["harness_verification_status"] = verification["status"]
     result["harness_verification_path"] = verification["path"]
     if verification["passed"]:

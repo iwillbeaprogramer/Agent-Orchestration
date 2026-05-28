@@ -42,27 +42,31 @@ def _finish_pc_candidate_extraction(state: dict[str, Any]) -> dict[str, Any]:
     try:
         extraction = extract_project_contract_candidates(state)
     except Exception as exc:
-        state["status"] = "blocked"
-        state["current_stage"] = PC_REVIEW_STAGE
-        state["blocked"] = {
-            "stage": PC_REVIEW_STAGE,
-            "reason": f"PC candidate extraction failed: {exc}",
-            "next_stage": PC_REVIEW_STAGE,
+        extraction = {
+            "status": "WARN",
+            "provider": "unknown",
+            "attempts": 0,
+            "raw_candidate_count": 0,
+            "candidate_count": 0,
+            "filtered_out_count": 0,
+            "recorded_count": 0,
+            "candidate_ids": [],
+            "candidates_path": rel(pc_candidates_path()),
+            "warning": "Project Contract candidate extraction failed before retries completed.",
+            "failures": [{"attempt": 0, "reason": str(exc)}],
         }
-        write_handoff(
-            state,
-            str(state["blocked"]["reason"]),
-            stage=PC_REVIEW_STAGE,
-            next_action="PC 후보 추출 실패 원인을 확인한 뒤 resume으로 다시 시도하세요.",
-        )
+        state["pc_candidate_extraction"] = extraction
+        state.pop("blocked", None)
+        state.pop("pc_candidate_source_stage", None)
         log_event(
             state,
-            "pc_candidate_extraction_failed",
-            str(exc),
+            "pc_candidate_extraction_warning",
+            "project contract candidate extraction failed unexpectedly; continuing run",
             stage=PC_REVIEW_STAGE,
+            error=str(exc),
         )
         save_state(state)
-        return state
+        return complete_run(state, source_stage)
 
     state["pc_candidate_extraction"] = extraction
     state.pop("blocked", None)
@@ -200,6 +204,64 @@ def _filtered_changed_paths(state: dict[str, Any], stage: str) -> list[str]:
     return sorted(set(paths))
 
 
+def _run_start_dirty_paths() -> list[str]:
+    paths: list[str] = []
+    for path in git_changed_paths():
+        normalized = str(path).replace("\\", "/")
+        if normalized == "src" or normalized.startswith("src/"):
+            paths.append(normalized)
+        elif normalized == "tests" or normalized.startswith("tests/"):
+            paths.append(normalized)
+    return sorted(set(paths))
+
+
+def _format_run_start_dirty_message(paths: list[str]) -> str:
+    lines = [
+        "Cannot start a new harness run because implementation paths are already dirty.",
+        "",
+        "The harness creates local commits for implementation stages and treats run start as",
+        "the clean baseline. Starting with dirty src/ or tests/ paths can make a later",
+        "stage commit exclude real changes.",
+        "",
+        "Dirty implementation paths:",
+    ]
+    max_paths = 40
+    for path in paths[:max_paths]:
+        lines.append(f"  - {path}")
+    if len(paths) > max_paths:
+        lines.append(f"  - ... and {len(paths) - max_paths} more")
+    lines.extend(
+        [
+            "",
+            "What to do next:",
+            "  1. Inspect the existing implementation changes:",
+            "     git status --short src tests",
+            "     git diff -- src tests",
+            "  2. If these changes should be kept as current work, commit them yourself first:",
+            "     git add src tests",
+            "     git commit -m \"save existing implementation changes\"",
+            "  3. If you want to set them aside temporarily, stash them yourself:",
+            "     git stash push -u -- src tests",
+            "  4. If these changes belong to an incomplete harness run, finish that run with resume/retry",
+            "     instead of starting a new run:",
+            "     python .ai\\harness.py status",
+            "     python .ai\\harness.py resume <feature> --auto --yes --defaults",
+            "  5. If the changes are disposable, clean them up explicitly, then start the run again.",
+            "",
+            "After one of the above actions, rerun your original harness command.",
+            "Allowed actions are explicit user choices such as commit, stash, or intentional cleanup.",
+            "The harness did not commit, stash, reset, or delete anything.",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _assert_clean_run_start_paths() -> None:
+    paths = _run_start_dirty_paths()
+    if paths:
+        raise HarnessError(_format_run_start_dirty_message(paths))
+
+
 def _commit_for_stage(state: dict[str, Any], stage: str, result: dict[str, Any]) -> None:
     if stage in NO_COMMIT_STAGES:
         log_event(state, "commit_skipped", "stage does not commit", stage=stage)
@@ -265,6 +327,7 @@ def _create_run(
     warn_pending_pc_candidates_for_new_run()
     assert_no_unpushed_commits_for_new_run()
     assert_no_incomplete_runs_for_new_run()
+    assert_clean_run_start_paths()
     ensure_dirs()
     performance_name = normalize_performance(performance)
     feature_name_locked = feature is not None
@@ -958,6 +1021,7 @@ _INTERNAL_NAMES = {
     'auto_drive': _auto_drive,
     'safe_git_head': _safe_git_head,
     'filtered_changed_paths': _filtered_changed_paths,
+    'assert_clean_run_start_paths': _assert_clean_run_start_paths,
     'commit_for_stage': _commit_for_stage,
     'create_run': _create_run,
     'apply_runtime_performance': _apply_runtime_performance,

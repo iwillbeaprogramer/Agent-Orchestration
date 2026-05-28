@@ -7,10 +7,18 @@ from typing import Any
 
 
 def load_config(ctx: dict[str, Any]) -> dict[str, Any]:
-    path = ctx["AI_DIR"] / "harness.config.json"
+    path = ctx["config_path"]()
     if not path.exists():
         return {}
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def config_path(ctx: dict[str, Any]) -> Path:
+    return ctx["AI_DIR"] / "harness.config.json"
+
+
+def write_config(ctx: dict[str, Any], config: dict[str, Any]) -> None:
+    ctx["write_json_file"](ctx["config_path"](), config)
 
 
 def raw_provider_command(ctx: dict[str, Any], provider: str) -> list[str]:

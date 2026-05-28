@@ -550,6 +550,14 @@ def load_config() -> dict[str, Any]:
     return provider_core.load_config(globals())
 
 
+def config_path() -> Path:
+    return provider_core.config_path(globals())
+
+
+def write_config(config: dict[str, Any]) -> None:
+    return provider_core.write_config(globals(), config)
+
+
 def raw_provider_command(provider: str) -> list[str]:
     return provider_core.raw_provider_command(globals(), provider)
 
@@ -1116,9 +1124,17 @@ def log_event(
     feature = state["feature_name"]
     timestamp = iso_now()
     stage = stage or state.get("current_stage")
+    provider_schedule = state.get("provider_schedule")
+    scheduled_provider = (
+        provider_schedule.get(str(stage))
+        if isinstance(provider_schedule, dict) and stage
+        else None
+    )
+    agent = str(fields.get("agent") or fields.get("provider") or scheduled_provider or "harness")
     line = f"[{timestamp}] [{feature}]"
     if stage:
         line += f" [{stage}]"
+    line += f" [{agent}]"
     line += f" {event}: {message}"
     if fields:
         compact = " ".join(f"{key}={value}" for key, value in fields.items() if value is not None)
@@ -1130,7 +1146,7 @@ def log_event(
     with path.open("a", encoding="utf-8") as fh:
         fh.write(line + "\n")
     state.setdefault("events", []).append(
-        {"at": timestamp, "event": event, "stage": stage, "message": message, **fields}
+        {"at": timestamp, "event": event, "stage": stage, "agent": agent, "message": message, **fields}
     )
     if console:
         print(event_line_for_console(line, event), flush=True)
@@ -1345,8 +1361,11 @@ def display_cwd(path: Path) -> str:
     return verification_core.display_cwd(globals(), path)
 
 
-def run_harness_verification(state: dict[str, Any]) -> dict[str, Any]:
-    return verification_core.run_harness_verification(globals(), state)
+def run_harness_verification(
+    state: dict[str, Any],
+    stage_result: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return verification_core.run_harness_verification(globals(), state, stage_result)
 
 
 def enforce_harness_verify_result(
