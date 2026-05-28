@@ -9,15 +9,19 @@ function getSectionSummary(sections) {
     (summary, section) => {
       section.items.forEach((item) => {
         summary.total += 1;
-        if ((item.changePercent ?? 0) >= 0) {
+        if (item.changePercent === null || item.changePercent === undefined || Number.isNaN(Number(item.changePercent))) {
+          summary.neutral += 1;
+        } else if (Number(item.changePercent) > 0) {
           summary.up += 1;
-        } else {
+        } else if (Number(item.changePercent) < 0) {
           summary.down += 1;
+        } else {
+          summary.neutral += 1;
         }
       });
       return summary;
     },
-    { total: 0, up: 0, down: 0 },
+    { total: 0, up: 0, down: 0, neutral: 0 },
   );
 }
 
@@ -78,6 +82,10 @@ function App() {
         <div>
           <span>하락</span>
           <strong className="negativeText">{summary.down}</strong>
+        </div>
+        <div>
+          <span>보합/기타</span>
+          <strong className="neutralText">{summary.neutral}</strong>
         </div>
         <div>
           <span>기준 시각</span>

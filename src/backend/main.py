@@ -1,4 +1,6 @@
-from fastapi import FastAPI
+import logging
+
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.adapters.mock_adapter import MockMarketDataAdapter
@@ -20,6 +22,7 @@ app.add_middleware(
 )
 
 market_data_adapter = MockMarketDataAdapter()
+logger = logging.getLogger(__name__)
 
 
 @app.get("/api/v1/health")
@@ -29,5 +32,9 @@ def getHealth() -> dict[str, str]:
 
 @app.get("/api/v1/market/dashboard", response_model=DashboardResponse)
 def getMarketDashboard() -> DashboardResponse:
-    dashboard_data = market_data_adapter.get_dashboard_data()
-    return DashboardResponse.model_validate(dashboard_data)
+    try:
+        dashboard_data = market_data_adapter.get_dashboard_data()
+        return DashboardResponse.model_validate(dashboard_data)
+    except Exception as exc:
+        logger.exception("Failed to load market dashboard data")
+        raise HTTPException(status_code=500, detail="Market dashboard data is temporarily unavailable.") from exc

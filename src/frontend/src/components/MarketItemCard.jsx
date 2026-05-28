@@ -4,9 +4,19 @@ function formatNumber(value, currency) {
   }
 
   return new Intl.NumberFormat('ko-KR', {
-    maximumFractionDigits: currency === 'KRW' ? 2 : 2,
+    maximumFractionDigits: 2,
     minimumFractionDigits: 2,
   }).format(value);
+}
+
+function formatSignedNumber(value, currency) {
+  if (value === null || value === undefined || Number.isNaN(Number(value))) {
+    return '-';
+  }
+
+  const numericValue = Number(value);
+  const sign = numericValue > 0 ? '+' : '';
+  return `${sign}${formatNumber(numericValue, currency)}`;
 }
 
 function formatChange(value) {
@@ -14,13 +24,28 @@ function formatChange(value) {
     return '-';
   }
 
-  const sign = value > 0 ? '+' : '';
-  return `${sign}${value.toFixed(2)}%`;
+  const numericValue = Number(value);
+  const sign = numericValue > 0 ? '+' : '';
+  return `${sign}${numericValue.toFixed(2)}%`;
+}
+
+function getMarketTone(changePercent) {
+  if (changePercent === null || changePercent === undefined || Number.isNaN(Number(changePercent))) {
+    return 'neutral';
+  }
+
+  const numericChangePercent = Number(changePercent);
+  if (numericChangePercent > 0) {
+    return 'positive';
+  }
+  if (numericChangePercent < 0) {
+    return 'negative';
+  }
+  return 'neutral';
 }
 
 function MarketItemCard({ item }) {
-  const changePercent = item.changePercent ?? 0;
-  const tone = changePercent >= 0 ? 'positive' : 'negative';
+  const tone = getMarketTone(item.changePercent);
   const asOf = item.asOf ? new Date(item.asOf).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' }) : '-';
 
   return (
@@ -37,7 +62,7 @@ function MarketItemCard({ item }) {
         <span className="currencyLabel">{item.currency}</span>
       </div>
       <div className="itemChangeLine">
-        <span>{formatNumber(item.change, item.currency)}</span>
+        <span>{formatSignedNumber(item.change, item.currency)}</span>
         <strong>{formatChange(item.changePercent)}</strong>
       </div>
       <div className="itemFooter">

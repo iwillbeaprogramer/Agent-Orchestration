@@ -1,5 +1,6 @@
 from fastapi.testclient import TestClient
 
+import main
 from main import app
 
 
@@ -27,3 +28,17 @@ def testHealthEndpointReturnsOk():
 
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def testMarketDashboardEndpointReturnsSafeErrorWhenAdapterFails(monkeypatch):
+    class FailingMarketDataAdapter:
+        def get_dashboard_data(self):
+            raise RuntimeError("provider timeout")
+
+    monkeypatch.setattr(main, "market_data_adapter", FailingMarketDataAdapter())
+    client = TestClient(app)
+
+    response = client.get("/api/v1/market/dashboard")
+
+    assert response.status_code == 500
+    assert response.json() == {"detail": "Market dashboard data is temporarily unavailable."}

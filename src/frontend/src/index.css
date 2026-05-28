@@ -94,7 +94,7 @@ h1 {
 
 .summaryStrip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
   margin-bottom: 18px;
 }
@@ -195,6 +195,10 @@ h1 {
   background: #ff6178;
 }
 
+.marketCard.neutral::before {
+  background: #9aa8ba;
+}
+
 .itemTopLine,
 .itemValueLine,
 .itemChangeLine,
@@ -229,7 +233,7 @@ h1 {
   margin-top: 8px;
 }
 
-.itemChangeLine strong,
+.positive .itemChangeLine strong,
 .positiveText {
   color: #33d69f;
 }
@@ -237,6 +241,11 @@ h1 {
 .negative .itemChangeLine strong,
 .negativeText {
   color: #ff6178;
+}
+
+.neutral .itemChangeLine strong,
+.neutralText {
+  color: #c8d4e5;
 }
 
 .itemFooter {
