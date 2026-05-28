@@ -2,12 +2,16 @@
 
 로컬 하네스가 자동 생성한 완료 run 인덱스 요약입니다.
 
-- 기록된 feature: 2
+- 기록된 feature: 3
 - 인덱스: .ai/history/index.json
 - PC 후보: .ai/history/pc_candidates.json
 
 ## 최근 완료 Run
 
+- 2026-05-28T16:38:36 debug (full, complete, verify=PASS)
+  - 최신 데이터 미반영 문제를 MockMarketDataAdapter 기본 사용과 정적 샘플 수치 문제로 정리했다.
+  - 기존 DashboardResponse 스키마와 섹션 id를 유지하면서 실제 제공자 기반 최신 데이터로 교체하는 요구사항을 확정했다.
+  - 외부 제공자 장애, 일부 항목 누락, 비유한 수치 정규화, marketStatus/source 명시 요구사항을 기록했다.
 - 2026-05-28T16:15:06 start-batchfile (fast, complete, verify=PASS)
   - Added src/start.bat to start backend and frontend from src-relative directories in separate CMD windows.
   - Added src/stop.bat to find LISTENING PIDs on ports 8000 and 5173 and terminate them with taskkill.

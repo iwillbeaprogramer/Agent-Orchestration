@@ -1,0 +1,58 @@
+{
+  "status": "PASS",
+  "next_stage": "done",
+  "human_gate_required": false,
+  "blocking_reason": "",
+  "risk_level": "low",
+  "harness_commit_required": false,
+  "commit_created": false,
+  "commit_message": "",
+  "model_mismatch": true,
+  "actual_model": "Codex",
+  "produced_files": [
+    ".ai/docs/debug_명세서.docx",
+    ".ai/features/debug/06_document.md",
+    ".ai/features/debug/06_document.result.json",
+    ".ai/runs/debug/document_build.py"
+  ],
+  "changed_files": [
+    ".ai/docs/debug_명세서.docx",
+    ".ai/features/debug/06_document.md",
+    ".ai/features/debug/06_document.result.json",
+    ".ai/runs/debug/document_build.py"
+  ],
+  "docx_path": ".ai/docs/debug_명세서.docx",
+  "document_created": true,
+  "verification_summary": {
+    "docx_exists": true,
+    "zip_signature_pk": true,
+    "content_types_xml": true,
+    "word_document_xml": true,
+    "document_body_non_empty": true,
+    "table_count": 4,
+    "heading1_count": 7,
+    "code_block_count": 2,
+    "placeholder_remaining": false,
+    "render_visual_qa": "SKIPPED",
+    "render_visual_qa_reason": "pdf2image 모듈이 없고 soffice, pdftoppm 실행 파일도 PATH에서 확인되지 않아 저장소 외 임시 렌더링을 완료할 수 없었다."
+  },
+  "history_notes": {
+    "implemented": [
+      ".ai/templates/docx_helper.py를 사용해 개발자용 기능 명세서 .docx를 생성했다.",
+      "명세서에 개요, 사용 방법, 관련 파일, 설계 결정, 의존성, 테스트 현황, 알려진 한계와 추후 개선을 포함했다.",
+      "파일 목록, 의존성, 테스트 현황을 표로 정리하고 API 호출 예시와 응답 예시는 코드 블록으로 작성했다."
+    ],
+    "risks": [
+      "시각 렌더 QA는 로컬 렌더 의존성 누락으로 수행하지 못했으며, OOXML 구조 검증으로 대체했다."
+    ],
+    "future_improvements": [
+      "문서 렌더링 환경에 pdf2image, LibreOffice 또는 동등한 DOCX 렌더 의존성을 준비하면 페이지 PNG 기반 시각 QA까지 수행할 수 있다."
+    ],
+    "decisions": [
+      "05_verify 최종 판정이 PASS이므로 .docx 명세서를 생성했다.",
+      "권장 모델과 실제 실행 모델이 달라 model_mismatch를 true로 기록했다.",
+      "템플릿 placeholder 검증 규칙과 충돌하지 않도록 docx 본문에는 기능 slug 문자열 대신 사람이 읽는 기능명을 사용했다."
+    ],
+    "unresolved_items": []
+  }
+}

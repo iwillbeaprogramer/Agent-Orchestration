@@ -3,6 +3,51 @@
     "features": [
         {
             "schema_version": 1,
+            "event_id": "20260528161801-debug-full",
+            "feature": "debug",
+            "pipeline": "full",
+            "status": "complete",
+            "created_at": "2026-05-28T16:18:01",
+            "completed_at": "2026-05-28T16:38:36",
+            "request_summary": "잘 켜지긴 하는데, 최신 데이터가 반영이 안되. 내가 이걸 진행하는 시점 기준으로 2026-05-28인데, 불러온 데이터는 굉장히 오래전 데이터로 보여. 최신 데이터로 불러와야해.",
+            "verification": "PASS",
+            "verification_source": ".ai/runs/debug/verification/latest.json",
+            "risk_level": "low",
+            "feature_dir": ".ai/features/debug",
+            "run_dir": ".ai/runs/debug",
+            "doc": ".ai/docs/debug_명세서.docx",
+            "commits": {
+                "02_develop": "aeb827a748cd41e73fc51c23d5cf655681236b22",
+                "04_fix": "162fdee36105b22d030951ca07f96f6db70440e1",
+                "05_verify": "52a65af196b3c4c6e6e7e9a56052c7135f3a6d66"
+            },
+            "implemented": [
+                "최신 데이터 미반영 문제를 MockMarketDataAdapter 기본 사용과 정적 샘플 수치 문제로 정리했다.",
+                "기존 DashboardResponse 스키마와 섹션 id를 유지하면서 실제 제공자 기반 최신 데이터로 교체하는 요구사항을 확정했다.",
+                "외부 제공자 장애, 일부 항목 누락, 비유한 수치 정규화, marketStatus/source 명시 요구사항을 기록했다.",
+                "실시간 야후 파이낸스 v8 API 연동 계획 수립",
+                "ThreadPoolExecutor 기반 18개 심볼 병렬 API 호출 설계",
+                "API 레이트 리밋 우회를 위한 60초 만료 로컬 캐시 적용 계획",
+                "JPYKRW=X 100엔 스케일링 변환 공식 설계",
+                "NaN/Infinity 유한성 보정 및 mock 데이터의 dynamic UTC asOf 매핑 계획"
+            ],
+            "important_followups": [
+                "필요하면 이후 단계에서 짧은 TTL 캐시, 제공자 우선순위, 관측 로그를 설계한다.",
+                "별도 범위로 깨진 한글 UI 문구를 복구할 수 있다.",
+                "유료 실시간 데이터가 필요하면 인증/비용/약관 검토 후 별도 기능으로 진행한다.",
+                "캐시 유효기간(TTL) 및 타임아웃 시간의 유연한 환경변수 설정 지원",
+                "영구 저장소나 Redis 등을 활용한 지속적 캐시 서버 설계"
+            ],
+            "important_decisions": [
+                "feature_name은 하네스 잠금값 debug를 유지했다.",
+                "비밀키가 없는 기본 환경에서도 동작 가능한 데이터 제공자 경로를 우선하기로 했다.",
+                "기존 프론트엔드 호환성을 위해 응답 스키마와 섹션 id는 유지하기로 했다.",
+                "mock 데이터는 기본 API 응답에서 최신 데이터처럼 사용하지 않고 테스트/개발 fallback 용도로만 남기기로 했다.",
+                "최신의 기준은 서버 날짜가 아니라 제공자가 반환하는 최신 가능 quote와 기준 시각으로 정의했다."
+            ]
+        },
+        {
+            "schema_version": 1,
             "event_id": "20260528160723-start-batchfile-fast",
             "feature": "start-batchfile",
             "pipeline": "fast",
@@ -87,5 +132,5 @@
             ]
         }
     ],
-    "updated_at": "2026-05-28T16:15:06"
+    "updated_at": "2026-05-28T16:38:36"
 }
