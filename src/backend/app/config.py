@@ -9,6 +9,8 @@ class Settings:
             "http://127.0.0.1:5173",
         ]
     )
+    yahoo_api_timeout: float = 5.0
+    cache_ttl_seconds: int = 60
 
 
 settings = Settings()

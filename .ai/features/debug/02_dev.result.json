@@ -1,0 +1,54 @@
+{
+  "status": "PASS",
+  "next_stage": "03_review",
+  "human_gate_required": false,
+  "blocking_reason": "",
+  "risk_level": "medium",
+  "harness_commit_required": true,
+  "commit_created_by_model": false,
+  "commit_message_suggestion": "debug[20260528-162732][02_develop]",
+  "base_commit": "352bdef0bfbe60b1093613d3255b66cdb97431e1",
+  "changed_files": [
+    ".ai/features/debug/02_dev.md",
+    ".ai/features/debug/02_dev.result.json",
+    "src/backend/app/config.py",
+    "src/backend/app/adapters/yahoo_adapter.py",
+    "src/backend/main.py",
+    "tests/backend/test_adapters.py",
+    "tests/backend/test_api.py"
+  ],
+  "produced_files": [
+    ".ai/features/debug/02_dev.md",
+    ".ai/features/debug/02_dev.result.json"
+  ],
+  "verification_summary": "python -m pytest -q: 14 passed in 0.56s. 실제 Yahoo 연동 스모크에서 18개 중 18개 항목 값 수집 성공.",
+  "test_commands": [
+    "python -m pytest -q",
+    "YahooMarketDataAdapter 실제 연동 스모크 스크립트"
+  ],
+  "model_mismatch": true,
+  "actual_model": "Codex",
+  "history_notes": {
+    "implemented": [
+      "Yahoo Finance v8 Chart API 기반 YahooMarketDataAdapter를 추가했다.",
+      "기본 대시보드 어댑터를 mock에서 Yahoo 어댑터로 교체했다.",
+      "60초 인메모리 캐시, 5초 타임아웃, 병렬 조회, 부분 실패 unavailable 처리를 구현했다.",
+      "어댑터와 API 테스트를 네트워크 비의존 방식으로 보강했다."
+    ],
+    "risks": [
+      "Yahoo Finance 공개 API는 차단 또는 응답 형식 변경 가능성이 있다.",
+      "캐시는 프로세스 메모리 기반이라 서버 재시작 시 유지되지 않는다."
+    ],
+    "future_improvements": [
+      "provider 장애율과 마지막 성공 시각을 관측 지표로 노출할 수 있다.",
+      "운영 환경에서 필요하면 검증된 유료 데이터 provider를 어댑터 뒤에 추가할 수 있다."
+    ],
+    "decisions": [
+      "새 의존성 없이 표준 라이브러리 urllib.request를 사용했다.",
+      "오래된 mock 값을 fallback으로 보여주지 않고 전체 provider 실패는 안전한 500 오류로 처리했다.",
+      "기존 UI 호환성을 위해 섹션 id와 표시명을 유지했다.",
+      "JPY/KRW는 기존 사양과 맞게 100엔 기준으로 스케일링했다."
+    ],
+    "unresolved_items": []
+  }
+}

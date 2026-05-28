@@ -3,7 +3,7 @@ import logging
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.adapters.mock_adapter import MockMarketDataAdapter
+from app.adapters.yahoo_adapter import YahooMarketDataAdapter
 from app.config import settings
 from app.schemas.market import DashboardResponse
 
@@ -21,7 +21,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-market_data_adapter = MockMarketDataAdapter()
+market_data_adapter = YahooMarketDataAdapter()
 logger = logging.getLogger(__name__)
 
 

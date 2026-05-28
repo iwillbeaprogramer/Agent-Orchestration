@@ -1,0 +1,46 @@
+{
+  "status": "PASS",
+  "next_stage": "01_plan",
+  "human_gate_required": true,
+  "blocking_reason": "",
+  "risk_level": "high",
+  "harness_commit_required": false,
+  "produced_files": [
+    ".ai/features/debug/00_spec.md",
+    ".ai/features/debug/00_spec.result.json"
+  ],
+  "changed_files": [
+    ".ai/features/debug/00_spec.md",
+    ".ai/features/debug/00_spec.result.json"
+  ],
+  "verification_summary": "코드 수정 없이 스펙 단계 산출물만 작성했다. 현재 API가 MockMarketDataAdapter의 정적 샘플 값을 반환하고 generatedAt/asOf만 현재 시각으로 채우는 구조임을 확인했다.",
+  "commit_created": false,
+  "commit_message": "",
+  "model_mismatch": false,
+  "actual_model": "Codex",
+  "history_notes": {
+    "implemented": [
+      "최신 데이터 미반영 문제를 MockMarketDataAdapter 기본 사용과 정적 샘플 수치 문제로 정리했다.",
+      "기존 DashboardResponse 스키마와 섹션 id를 유지하면서 실제 제공자 기반 최신 데이터로 교체하는 요구사항을 확정했다.",
+      "외부 제공자 장애, 일부 항목 누락, 비유한 수치 정규화, marketStatus/source 명시 요구사항을 기록했다."
+    ],
+    "risks": [
+      "외부 시장 데이터 제공자 연동과 금융 수치 노출 변경이 포함되어 위험도를 high로 판단했다.",
+      "무인증 공개 데이터 소스는 제공자 정책, 지연 시간, 심볼 체계, 네트워크 안정성의 영향을 받을 수 있다.",
+      "시장 휴장과 시간대 차이로 실행일과 항목별 asOf 날짜가 다를 수 있다."
+    ],
+    "future_improvements": [
+      "필요하면 이후 단계에서 짧은 TTL 캐시, 제공자 우선순위, 관측 로그를 설계한다.",
+      "별도 범위로 깨진 한글 UI 문구를 복구할 수 있다.",
+      "유료 실시간 데이터가 필요하면 인증/비용/약관 검토 후 별도 기능으로 진행한다."
+    ],
+    "decisions": [
+      "feature_name은 하네스 잠금값 debug를 유지했다.",
+      "비밀키가 없는 기본 환경에서도 동작 가능한 데이터 제공자 경로를 우선하기로 했다.",
+      "기존 프론트엔드 호환성을 위해 응답 스키마와 섹션 id는 유지하기로 했다.",
+      "mock 데이터는 기본 API 응답에서 최신 데이터처럼 사용하지 않고 테스트/개발 fallback 용도로만 남기기로 했다.",
+      "최신의 기준은 서버 날짜가 아니라 제공자가 반환하는 최신 가능 quote와 기준 시각으로 정의했다."
+    ],
+    "unresolved_items": []
+  }
+}
