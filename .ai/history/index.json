@@ -3,6 +3,46 @@
     "features": [
         {
             "schema_version": 1,
+            "event_id": "20260528160723-start-batchfile-fast",
+            "feature": "start-batchfile",
+            "pipeline": "fast",
+            "status": "complete",
+            "created_at": "2026-05-28T16:07:23",
+            "completed_at": "2026-05-28T16:15:06",
+            "request_summary": "프로그램을 어떻게 시작하는지 모르겠어. src밑에 프론트와 백을 한번에 켜는 배치파일과 끄는 배치파일을 만들어줘",
+            "verification": "PASS",
+            "verification_source": ".ai/runs/start-batchfile/verification/latest.json",
+            "risk_level": "low",
+            "feature_dir": ".ai/features/start-batchfile",
+            "run_dir": ".ai/runs/start-batchfile",
+            "doc": "",
+            "commits": {
+                "01_develop": "f8eccffca795d3e7706b2f37093e8fc302b5a671",
+                "02_verify": "e0bf847a8cb2167a38c1d9847e6f63f2fa3fe450"
+            },
+            "implemented": [
+                "Added src/start.bat to start backend and frontend from src-relative directories in separate CMD windows.",
+                "Added src/stop.bat to find LISTENING PIDs on ports 8000 and 5173 and terminate them with taskkill.",
+                "Added pytest coverage for the batch file contract.",
+                "src/start.bat 배치 파일 생성: 백엔드(FastAPI)와 프론트엔드(React/Vite)를 독립 CMD에서 비동기로 병렬 구동",
+                "src/stop.bat 배치 파일 생성: netstat을 사용하여 8000, 5173 포트의 LISTENING PID를 찾아서 자동 종료",
+                "tests/test_batch_scripts.py 단위 테스트 생성: 스크립트 절대경로 독립성 및 커맨드 구성 정적 검증"
+            ],
+            "important_followups": [
+                "추후 크로스 플랫폼 개발 환경을 배려하여 macOS 및 Linux 전용 쉘 스크립트(.sh) 제공 고려",
+                "If needed, stop.bat can later add working-directory filtering to reduce unrelated process termination risk.",
+                "차후 크로스 플랫폼 호환성을 위해 macOS/Linux용 쉘 스크립트(.sh) 추가 고려"
+            ],
+            "important_decisions": [
+                "사용자 운영체제가 Windows이므로 .bat 배치 파일을 통해 간편하게 구동하도록 기획",
+                "src/ 디렉터리 하위에 start.bat 및 stop.bat 배치 파일을 생성하는 개발 계획 수립",
+                "안전한 프로세스 종료를 위해 netstat 조회를 동반한 포트 기준 PID 강제 종료(taskkill) 방식 채택",
+                "Kept the scope to Windows .bat files under src and did not add PowerShell or root-level helper scripts.",
+                "Used %~dp0 so the scripts work regardless of the current shell directory."
+            ]
+        },
+        {
+            "schema_version": 1,
             "event_id": "20260528153015-project-initialize-full",
             "feature": "project-initialize",
             "pipeline": "full",
@@ -47,5 +87,5 @@
             ]
         }
     ],
-    "updated_at": "2026-05-28T16:04:09"
+    "updated_at": "2026-05-28T16:15:06"
 }

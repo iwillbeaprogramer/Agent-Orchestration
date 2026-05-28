@@ -2,12 +2,16 @@
 
 로컬 하네스가 자동 생성한 완료 run 인덱스 요약입니다.
 
-- 기록된 feature: 1
+- 기록된 feature: 2
 - 인덱스: .ai/history/index.json
 - PC 후보: .ai/history/pc_candidates.json
 
 ## 최근 완료 Run
 
+- 2026-05-28T16:15:06 start-batchfile (fast, complete, verify=PASS)
+  - Added src/start.bat to start backend and frontend from src-relative directories in separate CMD windows.
+  - Added src/stop.bat to find LISTENING PIDs on ports 8000 and 5173 and terminate them with taskkill.
+  - Added pytest coverage for the batch file contract.
 - 2026-05-28T16:04:09 project-initialize (full, complete, verify=PASS)
   - React 프론트엔드와 FastAPI 백엔드 기반 주식/시장 대시보드 초기 스펙을 확정했다.
   - 미국 대표지수, 한국 대표지수, 기타국 대표지수, 환율 섹션의 기본 표시 대상을 정의했다.
