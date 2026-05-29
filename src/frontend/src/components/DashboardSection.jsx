@@ -18,7 +18,7 @@ function DashboardSection({ section, isLoading = false }) {
     <article className="sectionPanel">
       <div className="sectionHeader">
         <h2>{section.title}</h2>
-        <span>{section.items.length}개</span>
+        <span>{section.items.length} items</span>
       </div>
       <div className="itemList">
         {section.items.map((item) => (

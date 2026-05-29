@@ -27,6 +27,73 @@ def yahooPayload(price=100.0, previous_close=95.0, regular_market_time=177992640
     )
 
 
+def yahooSearchPayload():
+    return b"""{
+        "quotes": [
+            {
+                "symbol": "QLD",
+                "shortname": "ProShares Ultra QQQ",
+                "quoteType": "ETF",
+                "exchange": "PCX",
+                "currency": "USD"
+            },
+            {
+                "symbol": "005930.KS",
+                "shortname": "Samsung Electronics Co., Ltd.",
+                "quoteType": "EQUITY",
+                "exchange": "KSC",
+                "currency": "KRW"
+            },
+            {
+                "symbol": "BTC-USD",
+                "shortname": "Bitcoin USD",
+                "quoteType": "CRYPTOCURRENCY",
+                "exchange": "CCC",
+                "currency": "USD"
+            }
+        ]
+    }"""
+
+
+def yahooDetailPayload():
+    return b"""{
+        "chart": {
+            "result": [
+                {
+                    "meta": {
+                        "currency": "USD",
+                        "symbol": "QLD",
+                        "exchangeName": "PCX",
+                        "instrumentType": "ETF",
+                        "regularMarketPrice": 101.5,
+                        "previousClose": 100.0,
+                        "regularMarketOpen": 99.5,
+                        "regularMarketDayHigh": 102.0,
+                        "regularMarketDayLow": 98.7,
+                        "regularMarketVolume": 1234567,
+                        "regularMarketTime": 1779926400,
+                        "marketState": "REGULAR",
+                        "shortName": "ProShares Ultra QQQ"
+                    },
+                    "timestamp": [1779922800, 1779926400],
+                    "indicators": {
+                        "quote": [
+                            {
+                                "open": [99.0, 100.0],
+                                "high": [100.0, 102.0],
+                                "low": [98.5, 99.5],
+                                "close": [100.0, 101.5],
+                                "volume": [1000, 2000]
+                            }
+                        ]
+                    }
+                }
+            ],
+            "error": null
+        }
+    }"""
+
+
 def testMockAdapterReturnsExpectedSections():
     data = MockMarketDataAdapter().get_dashboard_data()
 
@@ -140,5 +207,71 @@ def testYahooAdapterRaisesWhenAllProviderValuesFail():
         adapter.get_dashboard_data()
     except MarketDataProviderError as exc:
         assert "usable market values" in str(exc)
+    else:
+        raise AssertionError("Expected MarketDataProviderError")
+
+
+def testYahooAdapterSearchSymbolsFiltersStocksAndEtfs():
+    requested_urls = []
+
+    def fetch_url(request, timeout):
+        requested_urls.append(request.full_url)
+        return FakeYahooResponse(yahooSearchPayload())
+
+    data = YahooMarketDataAdapter(fetch_url=fetch_url, cache_ttl_seconds=60).search_symbols("qld")
+
+    assert len(requested_urls) == 1
+    assert data["query"] == "qld"
+    assert [item["providerSymbol"] for item in data["results"]] == ["QLD", "005930.KS"]
+    assert data["results"][0]["instrumentType"] == "etf"
+    assert data["results"][1]["country"] == "KR"
+    assert data["results"][1]["displaySymbol"] == "005930"
+
+
+def testYahooAdapterGetStockDetailMapsQuoteAndChart():
+    requested_urls = []
+
+    def fetch_url(request, timeout):
+        requested_urls.append(request.full_url)
+        return FakeYahooResponse(yahooDetailPayload())
+
+    data = YahooMarketDataAdapter(fetch_url=fetch_url, cache_ttl_seconds=60).get_stock_detail("qld", "1M")
+
+    assert len(requested_urls) == 1
+    assert "range=1mo" in requested_urls[0]
+    assert data["instrument"]["providerSymbol"] == "QLD"
+    assert data["instrument"]["instrumentType"] == "etf"
+    assert data["quote"]["price"] == 101.5
+    assert data["quote"]["change"] == 1.5
+    assert data["quote"]["changePercent"] == 1.5
+    assert data["quote"]["marketStatus"] == "regular"
+    assert len(data["chart"]) == 2
+    assert data["chart"][1]["close"] == 101.5
+
+
+def testYahooAdapterGetStockDetailRaisesOnProviderFailure():
+    def fetch_url(request, timeout):
+        raise TimeoutError("provider timeout")
+
+    adapter = YahooMarketDataAdapter(fetch_url=fetch_url, cache_ttl_seconds=0)
+
+    try:
+        adapter.get_stock_detail("QLD", "1M")
+    except MarketDataProviderError as exc:
+        assert "chart request failed" in str(exc)
+    else:
+        raise AssertionError("Expected MarketDataProviderError")
+
+
+def testYahooAdapterGetStockDetailRejectsUnsupportedInstrumentType():
+    def fetch_url(request, timeout):
+        return FakeYahooResponse(yahooDetailPayload().replace(b'"instrumentType": "ETF"', b'"instrumentType": "CRYPTOCURRENCY"'))
+
+    adapter = YahooMarketDataAdapter(fetch_url=fetch_url, cache_ttl_seconds=0)
+
+    try:
+        adapter.get_stock_detail("BTC-USD", "1M")
+    except MarketDataProviderError as exc:
+        assert "supported Korea/US stock or ETF" in str(exc)
     else:
         raise AssertionError("Expected MarketDataProviderError")

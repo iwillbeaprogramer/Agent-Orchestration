@@ -1,0 +1,48 @@
+{
+  "status": "PASS",
+  "next_stage": "01_plan",
+  "human_gate_required": true,
+  "blocking_reason": "",
+  "risk_level": "medium",
+  "harness_commit_required": false,
+  "changed_files": [
+    ".ai/features/search/00_spec.md",
+    ".ai/features/search/00_spec.result.json"
+  ],
+  "produced_files": [
+    ".ai/features/search/00_spec.md",
+    ".ai/features/search/00_spec.result.json"
+  ],
+  "verification_summary": "스펙 단계로 코드와 테스트는 변경하지 않았으며, 기존 프론트엔드/백엔드 구조를 확인해 구현 범위와 기본 결정을 문서화했다.",
+  "commit_created": false,
+  "commit_message": "",
+  "model_mismatch": false,
+  "actual_model": "Codex",
+  "history_notes": {
+    "implemented": [
+      "대시보드-종목탭-설정 탭 구조 요구사항을 확정했다.",
+      "설정 탭에서 한국/미국 주식 및 ETF만 검색하고 전용 종목 탭으로 추가하는 범위를 확정했다.",
+      "종목 상세 정보와 차트 API/UI의 최소 표시 항목을 정의했다.",
+      "기존 Yahoo 어댑터 확장, localStorage 저장, 중복 추가 시 기존 탭 이동을 기본 결정으로 기록했다."
+    ],
+    "risks": [
+      "Yahoo Finance 비공식 엔드포인트 응답 형식과 한국 종목 검색 품질에 변동 가능성이 있다.",
+      "현재 단일 화면 중심의 App.jsx가 커질 수 있어 구현 단계에서 컴포넌트 분리가 필요하다.",
+      "현재 일부 한글 문자열이 깨져 보이는 파일이 있어 신규 문구 작성 시 UTF-8 인코딩 유지가 필요하다."
+    ],
+    "future_improvements": [
+      "Server-side watchlist storage for user accounts",
+      "Additional chart ranges and technical indicators",
+      "Portfolio return tracking, alerts, and group management"
+    ],
+    "decisions": [
+      "feature_name은 하네스가 잠근 search를 유지한다.",
+      "대시보드는 항상 첫 번째 탭, 설정은 항상 마지막 탭으로 둔다.",
+      "추가 종목 탭은 브라우저 localStorage에 저장한다.",
+      "검색/상세 데이터는 기존 YahooMarketDataAdapter 패턴을 확장해 제공한다.",
+      "차트는 새 외부 라이브러리 없이 가벼운 자체 렌더링을 기본으로 한다.",
+      "기본 차트 기간은 1개월이며 1D, 1M, 3M, 1Y 선택지를 둔다."
+    ],
+    "unresolved_items": []
+  }
+}

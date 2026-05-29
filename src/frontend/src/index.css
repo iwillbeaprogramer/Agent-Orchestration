@@ -99,9 +99,40 @@ h1 {
   margin-bottom: 18px;
 }
 
+.tabBar {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 18px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.tabButton {
+  flex: 0 0 auto;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  min-width: 104px;
+  padding: 10px 14px;
+  color: #c8d4e5;
+  background: rgba(255, 255, 255, 0.05);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.tabButton.active {
+  border-color: rgba(76, 143, 255, 0.72);
+  color: #ffffff;
+  background: rgba(45, 108, 223, 0.32);
+}
+
 .summaryStrip div,
 .sectionPanel,
-.statusBanner {
+.statusBanner,
+.settingsPanel,
+.detailHero,
+.detailToolbar,
+.statCard,
+.chartShell {
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: rgba(12, 22, 38, 0.72);
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28);
@@ -275,6 +306,243 @@ h1 {
   padding: 8px 12px;
 }
 
+.settingsLayout,
+.stockDetailLayout {
+  display: grid;
+  gap: 18px;
+}
+
+.settingsLayout {
+  grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.6fr);
+}
+
+.settingsPanel,
+.detailHero,
+.detailToolbar,
+.statCard,
+.chartShell {
+  border-radius: 8px;
+  padding: 18px;
+}
+
+.searchField {
+  display: grid;
+  gap: 8px;
+}
+
+.searchField span,
+.searchState,
+.searchResult small,
+.addedStock span,
+.detailHero p,
+.statCard span,
+.detailPrice span,
+.chartHeader span {
+  color: #93a0b4;
+  font-size: 0.88rem;
+}
+
+.searchField input {
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 8px;
+  width: 100%;
+  padding: 12px 14px;
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.06);
+  outline: none;
+}
+
+.searchField input:focus {
+  border-color: rgba(143, 180, 255, 0.8);
+}
+
+.searchState {
+  min-height: 24px;
+  margin-top: 10px;
+}
+
+.searchResults,
+.addedStockList {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.searchResult,
+.addedStock {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  border-radius: 8px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.searchResult div {
+  display: grid;
+  gap: 2px;
+}
+
+.searchResult button,
+.rangeGroup button,
+.ghostButton {
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 8px 11px;
+  color: #ffffff;
+  background: rgba(45, 108, 223, 0.72);
+  cursor: pointer;
+  font-weight: 800;
+}
+
+.ghostButton {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.stockOpenButton {
+  display: grid;
+  gap: 2px;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.emptyState,
+.chartEmpty {
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  padding: 18px;
+  color: #93a0b4;
+}
+
+.detailHero,
+.detailToolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.detailHero h2 {
+  font-size: clamp(1.8rem, 4vw, 3rem);
+  line-height: 1;
+}
+
+.detailPrice {
+  display: grid;
+  gap: 4px;
+  min-width: 180px;
+  text-align: right;
+}
+
+.detailPrice strong {
+  font-size: 2rem;
+  line-height: 1;
+}
+
+.detailPrice.positive strong,
+.stockChart.positive .chartLine,
+.stockChart.positive .chartHoverPoint {
+  color: #33d69f;
+  stroke: #33d69f;
+}
+
+.detailPrice.negative strong,
+.stockChart.negative .chartLine,
+.stockChart.negative .chartHoverPoint {
+  color: #ff6178;
+  stroke: #ff6178;
+}
+
+.rangeGroup {
+  display: flex;
+  gap: 8px;
+}
+
+.rangeGroup button {
+  min-width: 54px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.rangeGroup button.active {
+  border-color: rgba(143, 180, 255, 0.8);
+  background: rgba(45, 108, 223, 0.52);
+}
+
+.detailGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.statCard strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.statCard small {
+  margin-left: 6px;
+  color: #93a0b4;
+  font-size: 0.72rem;
+}
+
+.chartHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.chartHeader div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.chartHeader strong {
+  font-size: 1.35rem;
+}
+
+.stockChart {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 360px;
+}
+
+.chartFill {
+  fill: rgba(143, 180, 255, 0.10);
+}
+
+.chartLine {
+  fill: none;
+  stroke-width: 3;
+}
+
+.chartGuide,
+.chartHoverLine {
+  stroke: rgba(255, 255, 255, 0.14);
+  stroke-width: 1;
+}
+
+.chartHoverPoint {
+  fill: #08111f;
+  stroke-width: 3;
+}
+
+.chartAxisLabel {
+  fill: #93a0b4;
+  font-size: 12px;
+}
+
 .skeleton {
   min-height: 28px;
   border-radius: 8px;
@@ -309,8 +577,20 @@ h1 {
   }
 
   .summaryStrip,
-  .dashboardGrid {
+  .dashboardGrid,
+  .settingsLayout,
+  .detailGrid {
     grid-template-columns: 1fr;
+  }
+
+  .detailHero,
+  .detailToolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .detailPrice {
+    text-align: left;
   }
 }
 

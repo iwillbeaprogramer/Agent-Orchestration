@@ -22,10 +22,20 @@ class MarketDataProviderError(RuntimeError):
 
 class YahooMarketDataAdapter(MarketDataAdapter):
     API_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval=1d&range=1d"
+    SEARCH_URL = "https://query1.finance.yahoo.com/v1/finance/search?q={query}&quotesCount=12&newsCount=0"
+    DETAIL_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}?interval={interval}&range={range}"
     USER_AGENT = (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36"
     )
+    ALLOWED_RANGES = {
+        "1D": {"range": "1d", "interval": "5m"},
+        "1M": {"range": "1mo", "interval": "1d"},
+        "3M": {"range": "3mo", "interval": "1d"},
+        "1Y": {"range": "1y", "interval": "1d"},
+    }
+    US_EXCHANGES = {"ASE", "BATS", "NCM", "NGM", "NMS", "NYQ", "PCX", "PNK"}
+    KR_EXCHANGES = {"KSC", "KOE", "KOS"}
 
     SECTION_DEFINITIONS = [
         (
@@ -92,6 +102,7 @@ class YahooMarketDataAdapter(MarketDataAdapter):
         self.max_workers = max_workers
         self._cache: dict[str, Any] | None = None
         self._cache_expires_at = 0.0
+        self._lookup_cache: dict[str, tuple[float, dict[str, Any]]] = {}
         self._cache_lock = threading.Lock()
 
     def get_dashboard_data(self) -> dict[str, Any]:
@@ -114,6 +125,65 @@ class YahooMarketDataAdapter(MarketDataAdapter):
         self._set_cached_data(data)
         return deepcopy(data)
 
+    def search_symbols(self, query: str) -> dict[str, Any]:
+        normalized_query = query.strip()
+        cached = self._get_lookup_cache(f"search:{normalized_query.lower()}")
+        if cached is not None:
+            return cached
+
+        request = Request(
+            self.SEARCH_URL.format(query=quote(normalized_query, safe="")),
+            headers={"User-Agent": self.USER_AGENT, "Accept": "application/json"},
+        )
+        try:
+            with self.fetch_url(request, timeout=self.timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except Exception as exc:
+            raise MarketDataProviderError("Yahoo Finance search request failed.") from exc
+
+        results = []
+        seen_symbols = set()
+        for quote_item in payload.get("quotes") or []:
+            parsed_item = self._parse_search_result(quote_item)
+            if parsed_item is None or parsed_item["providerSymbol"] in seen_symbols:
+                continue
+            seen_symbols.add(parsed_item["providerSymbol"])
+            results.append(parsed_item)
+
+        data = {"query": normalized_query, "results": results}
+        self._set_lookup_cache(f"search:{normalized_query.lower()}", data)
+        return deepcopy(data)
+
+    def get_stock_detail(self, symbol: str, range_str: str) -> dict[str, Any]:
+        normalized_symbol = symbol.strip().upper()
+        normalized_range = range_str.strip().upper()
+        if normalized_range not in self.ALLOWED_RANGES:
+            raise ValueError("Unsupported range.")
+
+        cache_key = f"detail:{normalized_symbol}:{normalized_range}"
+        cached = self._get_lookup_cache(cache_key)
+        if cached is not None:
+            return cached
+
+        range_config = self.ALLOWED_RANGES[normalized_range]
+        request = Request(
+            self.DETAIL_URL.format(
+                symbol=quote(normalized_symbol, safe=""),
+                interval=range_config["interval"],
+                range=range_config["range"],
+            ),
+            headers={"User-Agent": self.USER_AGENT, "Accept": "application/json"},
+        )
+        try:
+            with self.fetch_url(request, timeout=self.timeout) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except Exception as exc:
+            raise MarketDataProviderError("Yahoo Finance chart request failed.") from exc
+
+        data = self._parse_detail_payload(normalized_symbol, normalized_range, payload)
+        self._set_lookup_cache(cache_key, data)
+        return deepcopy(data)
+
     def _get_cached_data(self) -> dict[str, Any] | None:
         with self._cache_lock:
             if self._cache is not None and time.monotonic() < self._cache_expires_at:
@@ -124,6 +194,19 @@ class YahooMarketDataAdapter(MarketDataAdapter):
         with self._cache_lock:
             self._cache = deepcopy(data)
             self._cache_expires_at = time.monotonic() + self.cache_ttl_seconds
+
+    def _get_lookup_cache(self, key: str) -> dict[str, Any] | None:
+        with self._cache_lock:
+            cached = self._lookup_cache.get(key)
+            if cached is not None and time.monotonic() < cached[0]:
+                return deepcopy(cached[1])
+            if cached is not None:
+                self._lookup_cache.pop(key, None)
+        return None
+
+    def _set_lookup_cache(self, key: str, data: dict[str, Any]) -> None:
+        with self._cache_lock:
+            self._lookup_cache[key] = (time.monotonic() + self.cache_ttl_seconds, deepcopy(data))
 
     def _fetch_items(self, fetched_at: datetime) -> dict[str, dict[str, Any]]:
         item_configs = [item for _, _, items in self.SECTION_DEFINITIONS for item in items]
@@ -173,6 +256,152 @@ class YahooMarketDataAdapter(MarketDataAdapter):
         if not result:
             raise MarketDataProviderError("Yahoo Finance chart response is missing result data.")
         return result[0].get("meta") or {}
+
+    def _parse_search_result(self, quote_item: dict[str, Any]) -> dict[str, Any] | None:
+        symbol = quote_item.get("symbol")
+        name = quote_item.get("shortname") or quote_item.get("longname") or quote_item.get("name")
+        if not isinstance(symbol, str) or not symbol.strip() or not isinstance(name, str) or not name.strip():
+            return None
+
+        instrument_type = self._instrument_type(quote_item)
+        country = self._country(quote_item, symbol)
+        if instrument_type is None or country is None:
+            return None
+
+        exchange = str(quote_item.get("exchange") or quote_item.get("exchDisp") or "-")
+        currency = str(quote_item.get("currency") or ("KRW" if country == "KR" else "USD"))
+        provider_symbol = symbol.strip().upper()
+        return {
+            "symbol": self._display_symbol(provider_symbol),
+            "displaySymbol": self._display_symbol(provider_symbol),
+            "name": name.strip(),
+            "exchange": exchange,
+            "country": country,
+            "instrumentType": instrument_type,
+            "currency": currency,
+            "providerSymbol": provider_symbol,
+            "source": "yahoo-finance-search",
+        }
+
+    def _parse_detail_payload(self, symbol: str, range_str: str, payload: dict[str, Any]) -> dict[str, Any]:
+        result = self._chart_result(payload)
+        meta = result.get("meta") or {}
+        timestamps = result.get("timestamp") or []
+        quote_data = ((result.get("indicators") or {}).get("quote") or [{}])[0] or {}
+        currency = str(meta.get("currency") or ("KRW" if self._is_kr_symbol(symbol) else "USD"))
+        instrument_type = self._meta_instrument_type(meta)
+        country = self._detail_country(meta, symbol)
+        if instrument_type is None or country is None:
+            raise MarketDataProviderError("Yahoo Finance chart response is not a supported Korea/US stock or ETF.")
+        price = self._finite(meta.get("regularMarketPrice"))
+        previous_close = self._previous_close(meta)
+        as_of = self._as_of(meta, datetime.now(UTC)).isoformat()
+        instrument = {
+            "symbol": self._display_symbol(symbol),
+            "displaySymbol": self._display_symbol(symbol),
+            "name": str(meta.get("longName") or meta.get("shortName") or symbol),
+            "exchange": str(meta.get("exchangeName") or meta.get("fullExchangeName") or meta.get("exchange") or "-"),
+            "country": country,
+            "instrumentType": instrument_type,
+            "currency": currency,
+            "providerSymbol": symbol,
+            "source": "yahoo-finance-v8",
+        }
+        data = {
+            "instrument": instrument,
+            "quote": {
+                "price": price,
+                "change": self._calculate_change(price, previous_close),
+                "changePercent": self._calculate_change_percent(price, previous_close),
+                "open": self._finite(meta.get("regularMarketOpen")),
+                "high": self._finite(meta.get("regularMarketDayHigh")),
+                "low": self._finite(meta.get("regularMarketDayLow")),
+                "previousClose": self._finite(meta.get("chartPreviousClose")),
+                "regularMarketPreviousClose": self._finite(meta.get("regularMarketPreviousClose") or meta.get("previousClose")),
+                "volume": self._finite(meta.get("regularMarketVolume")),
+                "currency": currency,
+                "marketStatus": self._market_status(meta),
+                "asOf": as_of,
+                "source": "yahoo-finance-v8",
+            },
+            "chart": self._chart_points(timestamps, quote_data),
+            "range": range_str,
+        }
+        if data["quote"]["price"] is None and not data["chart"]:
+            raise MarketDataProviderError("Yahoo Finance chart response is missing usable stock data.")
+        return data
+
+    def _chart_result(self, payload: dict[str, Any]) -> dict[str, Any]:
+        error = payload.get("chart", {}).get("error")
+        if error:
+            raise MarketDataProviderError("Yahoo Finance chart response contains an error.")
+        result = payload.get("chart", {}).get("result")
+        if not result:
+            raise MarketDataProviderError("Yahoo Finance chart response is missing result data.")
+        return result[0]
+
+    def _chart_points(self, timestamps: list[Any], quote_data: dict[str, Any]) -> list[dict[str, Any]]:
+        fields = {
+            "open": quote_data.get("open") or [],
+            "high": quote_data.get("high") or [],
+            "low": quote_data.get("low") or [],
+            "close": quote_data.get("close") or [],
+            "volume": quote_data.get("volume") or [],
+        }
+        points = []
+        for index, timestamp in enumerate(timestamps):
+            if not isinstance(timestamp, (int, float)) or not math.isfinite(timestamp):
+                continue
+            point = {"timestamp": datetime.fromtimestamp(timestamp, UTC).isoformat()}
+            for field_name, values in fields.items():
+                point[field_name] = self._finite(values[index]) if index < len(values) else None
+            if any(point[field_name] is not None for field_name in fields):
+                points.append(point)
+        return points
+
+    def _instrument_type(self, quote_item: dict[str, Any]) -> str | None:
+        quote_type = str(quote_item.get("quoteType") or "").upper()
+        type_disp = str(quote_item.get("typeDisp") or "").upper()
+        if quote_type == "ETF" or type_disp == "ETF":
+            return "etf"
+        if quote_type == "EQUITY":
+            return "stock"
+        return None
+
+    def _meta_instrument_type(self, meta: dict[str, Any]) -> str | None:
+        instrument_type = str(meta.get("instrumentType") or "").upper()
+        if instrument_type == "ETF":
+            return "etf"
+        if instrument_type in {"EQUITY", "STOCK"}:
+            return "stock"
+        return None
+
+    def _country(self, quote_item: dict[str, Any], symbol: str) -> str | None:
+        exchange = str(quote_item.get("exchange") or "").upper()
+        if exchange in self.KR_EXCHANGES or self._is_kr_symbol(symbol):
+            return "KR"
+        if exchange in self.US_EXCHANGES:
+            return "US"
+        return None
+
+    def _is_kr_symbol(self, symbol: str) -> bool:
+        upper_symbol = symbol.upper()
+        return upper_symbol.endswith(".KS") or upper_symbol.endswith(".KQ")
+
+    def _detail_country(self, meta: dict[str, Any], symbol: str) -> str | None:
+        exchange = str(meta.get("exchangeName") or meta.get("exchange") or "").upper()
+        if exchange in self.KR_EXCHANGES or self._is_kr_symbol(symbol):
+            return "KR"
+        if exchange in self.US_EXCHANGES:
+            return "US"
+        if "." not in symbol:
+            return "US"
+        return None
+
+    def _display_symbol(self, symbol: str) -> str:
+        if self._is_kr_symbol(symbol):
+            return symbol.rsplit(".", 1)[0]
+        return symbol.upper()
 
     def _previous_close(self, meta: dict[str, Any]) -> float | None:
         for key in ("previousClose", "chartPreviousClose", "regularMarketPreviousClose"):

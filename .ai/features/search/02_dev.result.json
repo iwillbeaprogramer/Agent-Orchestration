@@ -1,0 +1,92 @@
+{
+  "status": "PASS",
+  "next_stage": "03_review",
+  "human_gate_required": false,
+  "blocking_reason": "",
+  "risk_level": "medium",
+  "harness_commit_required": true,
+  "commit_created_by_model": false,
+  "commit_message_suggestion": "search[20260528-164539][02_develop]",
+  "base_commit": "da160df675d1918bbcb4b761ad53e043bacbff08",
+  "model_mismatch": true,
+  "actual_model": "Codex",
+  "produced_files": [
+    ".ai/features/search/02_dev.md",
+    ".ai/features/search/02_dev.result.json"
+  ],
+  "changed_files": [
+    ".ai/features/search/02_dev.md",
+    ".ai/features/search/02_dev.result.json",
+    "src/backend/app/adapters/base.py",
+    "src/backend/app/adapters/mock_adapter.py",
+    "src/backend/app/adapters/yahoo_adapter.py",
+    "src/backend/app/schemas/market.py",
+    "src/backend/main.py",
+    "src/frontend/src/App.jsx",
+    "src/frontend/src/components/DashboardSection.jsx",
+    "src/frontend/src/components/SettingsTab.jsx",
+    "src/frontend/src/components/StatusBanner.jsx",
+    "src/frontend/src/components/StockChart.jsx",
+    "src/frontend/src/components/StockDetailTab.jsx",
+    "src/frontend/src/components/TabNavigation.jsx",
+    "src/frontend/src/index.css",
+    "tests/backend/test_adapters.py",
+    "tests/backend/test_api.py"
+  ],
+  "commit_scope": [
+    ".ai/features/search/00_spec.md",
+    ".ai/features/search/00_spec.result.json",
+    ".ai/features/search/01_plan.md",
+    ".ai/features/search/01_plan.result.json",
+    ".ai/features/search/02_dev.md",
+    ".ai/features/search/02_dev.result.json",
+    "src/backend/app/schemas/market.py",
+    "src/backend/app/adapters/base.py",
+    "src/backend/app/adapters/yahoo_adapter.py",
+    "src/backend/app/adapters/mock_adapter.py",
+    "src/backend/main.py",
+    "src/frontend/src/App.jsx",
+    "src/frontend/src/components/DashboardSection.jsx",
+    "src/frontend/src/components/StatusBanner.jsx",
+    "src/frontend/src/components/SettingsTab.jsx",
+    "src/frontend/src/components/StockChart.jsx",
+    "src/frontend/src/components/StockDetailTab.jsx",
+    "src/frontend/src/components/TabNavigation.jsx",
+    "src/frontend/src/index.css",
+    "tests/backend/test_adapters.py",
+    "tests/backend/test_api.py"
+  ],
+  "verification_summary": "python -m pytest tests -q: 22 passed. npm run build: success. Local smoke checks for health, frontend HTML, QLD search, and QLD 1M detail succeeded. In-app browser screenshot verification was not available because no Browser/iab instance was exposed in this session.",
+  "test_commands": [
+    "python -m pytest tests -q",
+    "npm run build",
+    "Invoke-WebRequest http://127.0.0.1:8000/api/v1/health",
+    "Invoke-WebRequest http://127.0.0.1:5174",
+    "Invoke-WebRequest 'http://127.0.0.1:8000/api/v1/market/search?query=QLD'",
+    "Invoke-WebRequest 'http://127.0.0.1:8000/api/v1/market/detail?symbol=QLD&range=1M'"
+  ],
+  "history_notes": {
+    "implemented": [
+      "대시보드, 사용자 종목 탭, 설정 탭 순서의 React 탭 네비게이션을 구현했다.",
+      "설정 탭에서 한국/미국 주식 및 ETF 검색, 추가, 중복 시 기존 탭 열기, 제거 기능을 구현했다.",
+      "종목 상세 탭에서 주요 quote 필드와 1D/1M/3M/1Y SVG 차트를 제공했다.",
+      "FastAPI에 검색 및 상세 API를 추가하고 Yahoo Finance 어댑터와 mock 어댑터를 확장했다.",
+      "백엔드 테스트를 검색/상세 성공 경로, 입력 오류, 제공자 실패, 비지원 상품 유형 거부까지 보강했다."
+    ],
+    "risks": [
+      "Yahoo Finance 비공식 엔드포인트에 의존하므로 응답 형식 변경이나 제한에 영향을 받을 수 있다.",
+      "인앱 브라우저가 노출되지 않아 화면 캡처 기반 검증은 수행하지 못했다."
+    ],
+    "future_improvements": [
+      "프론트 테스트 러너가 도입되면 localStorage 복구와 탭 추가/삭제 플로우를 자동화한다.",
+      "검색/상세 캐시 정책을 운영 요구에 맞춰 더 세분화한다."
+    ],
+    "decisions": [
+      "새 차트 의존성 없이 SVG 자체 렌더링을 사용했다.",
+      "추가 종목 저장은 기본 결정대로 브라우저 localStorage를 사용했다.",
+      "설정 탭은 항상 마지막에 렌더링하고 대시보드는 항상 첫 번째에 고정했다.",
+      "기존 수정 대상 컴포넌트의 깨진 표시 문자열은 빌드와 사용성 안정을 위해 영문 ASCII 문구로 정리했다."
+    ],
+    "unresolved_items": []
+  }
+}
