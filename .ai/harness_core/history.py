@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -1251,6 +1252,73 @@ def _append_pc_candidates(candidates: list[dict[str, Any]], state: dict[str, Any
     }
 
 
+def _pc_candidate_run_window(result: dict[str, Any]) -> tuple[float, float] | None:
+    finished_raw = str(result.get("finished_at") or "").strip()
+    if not finished_raw:
+        return None
+    try:
+        finished = datetime.fromisoformat(finished_raw)
+        elapsed = float(result.get("elapsed_seconds") or 0)
+    except (TypeError, ValueError):
+        return None
+    started = finished - timedelta(seconds=max(elapsed, 0) + 5)
+    ended = finished + timedelta(seconds=15)
+    return started.timestamp(), ended.timestamp()
+
+
+def _parse_pc_candidate_json_path(path: Path) -> dict[str, Any]:
+    try:
+        output_text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    if not output_text.strip():
+        return {}
+    return parse_result_json_from_text(output_text)
+
+
+def _pc_candidate_capture_fallback_json(
+    output_path: Path,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    match = re.match(r"^(pc_candidates_[A-Za-z0-9_.-]+)_attempt(\d+)_result\.json$", output_path.name)
+    if not match:
+        return {}
+    run_window = _pc_candidate_run_window(result)
+    if run_window is None:
+        return {}
+
+    prefix = match.group(1)
+    expected_attempt = int(match.group(2))
+    started_ts, ended_ts = run_window
+    candidates: list[tuple[float, Path]] = []
+    try:
+        paths = output_path.parent.glob(f"{prefix}_attempt*_result.json")
+    except OSError:
+        return {}
+
+    for path in paths:
+        attempt_match = re.match(
+            rf"^{re.escape(prefix)}_attempt(\d+)_result\.json$",
+            path.name,
+        )
+        if not attempt_match:
+            continue
+        if int(attempt_match.group(1)) > expected_attempt:
+            continue
+        try:
+            mtime = path.stat().st_mtime
+        except OSError:
+            continue
+        if started_ts <= mtime <= ended_ts:
+            candidates.append((mtime, path))
+
+    for _, path in sorted(candidates, key=lambda item: item[0], reverse=True):
+        parsed = _parse_pc_candidate_json_path(path)
+        if isinstance(parsed.get("candidates"), list):
+            return parsed
+    return {}
+
+
 def _parse_pc_candidate_extraction_result(result: dict[str, Any]) -> list[Any]:
     if result.get("returncode") != 0 or result.get("timed_out"):
         raise HarnessError(
@@ -1263,12 +1331,9 @@ def _parse_pc_candidate_extraction_result(result: dict[str, Any]) -> list[Any]:
         raw_output_path = str(result.get("json_output") or "").strip()
         if raw_output_path:
             output_path = ROOT / norm_repo_path(raw_output_path)
-            try:
-                output_text = output_path.read_text(encoding="utf-8")
-            except OSError:
-                output_text = ""
-            if output_text:
-                parsed = parse_result_json_from_text(output_text)
+            parsed = _parse_pc_candidate_json_path(output_path)
+            if not parsed:
+                parsed = _pc_candidate_capture_fallback_json(output_path, result)
     raw_candidates = parsed.get("candidates") if isinstance(parsed, dict) else None
     if raw_candidates is None:
         raise HarnessError(

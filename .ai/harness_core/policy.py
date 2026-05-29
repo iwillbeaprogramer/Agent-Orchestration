@@ -22,12 +22,15 @@ SNAPSHOT_GENERATED_DIR_NAMES = {
     ".nuxt",
     ".parcel-cache",
     ".pytest_cache",
+    ".pytest-tmp",
+    ".pytest_tmp",
     ".ruff_cache",
     ".svelte-kit",
     ".tox",
     ".turbo",
     ".venv",
     ".vite",
+    ".tmp",
     ".vs",
     ".vscode",
     ".vstest",
@@ -45,6 +48,7 @@ SNAPSHOT_GENERATED_DIR_NAMES = {
     "obj",
     "out",
     "packages",
+    "_pytest_tmp",
     "target",
     "temp",
     "TestResults",
@@ -88,6 +92,16 @@ SNAPSHOT_GENERATED_FILE_SUFFIXES = {
     ".user",
     ".vsidx",
     "_MarkupCompile.i.cache",
+}
+
+KNOWN_ROOT_PATHS = {
+    ".ai",
+    ".gitattributes",
+    ".gitignore",
+    "README.md",
+    "presets",
+    "src",
+    "tests",
 }
 
 
@@ -220,6 +234,25 @@ def policy_item_matches(path: str, item: str, before_snapshot: dict[str, str]) -
     return direct_policy_match(path, item)
 
 
+def is_unknown_root_write(path: str) -> bool:
+    path = norm_repo_path(path)
+    first = path.split("/", 1)[0]
+    return first not in KNOWN_ROOT_PATHS
+
+
+def outside_allowed_writes_message(path: str) -> str:
+    if is_unknown_root_write(path):
+        return (
+            f"{path} is outside allowed_writes "
+            "(unknown repository-root write; delete it and resume, or add a narrow generated-path "
+            "allowlist entry if it is a disposable tool artifact)"
+        )
+    return (
+        f"{path} is outside allowed_writes "
+        "(if this is a disposable generated file, delete it and resume or add it to the generated-path allowlist)"
+    )
+
+
 def write_policy_violations(ctx: dict[str, Any], state: dict[str, Any], stage: str) -> list[str]:
     feature = state["feature_name"]
     meta, _, _ = ctx["read_preset"](stage)
@@ -251,7 +284,7 @@ def write_policy_violations(ctx: dict[str, Any], state: dict[str, Any], stage: s
 
         allowed_match = any(policy_item_matches(path, item, before_snapshot) for item in allowed)
         if not allowed_match:
-            violations.append(f"{path} is outside allowed_writes")
+            violations.append(outside_allowed_writes_message(path))
 
     return violations
 
