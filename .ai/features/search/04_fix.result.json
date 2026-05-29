@@ -1,0 +1,75 @@
+{
+  "status": "PASS",
+  "next_stage": "05_verify",
+  "human_gate_required": false,
+  "blocking_reason": "",
+  "risk_level": "low",
+  "harness_commit_required": true,
+  "commit_created_by_model": false,
+  "commit_mode_suggestion": "create",
+  "commit_message_suggestion": "search[20260529-095105][04_fix]",
+  "no_code_changes": false,
+  "changed_files": [
+    "src/backend/app/adapters/yahoo_adapter.py",
+    "tests/backend/test_adapters.py",
+    ".ai/features/search/04_fix.md",
+    ".ai/features/search/04_fix.result.json"
+  ],
+  "produced_files": [
+    ".ai/features/search/04_fix.md",
+    ".ai/features/search/04_fix.result.json"
+  ],
+  "test_commands": [
+    {
+      "command": "python -m pytest tests -q",
+      "result": "초기 실행은 코드 테스트 23개 통과 후 Windows 기본 pytest 임시 디렉터리 권한 문제로 하네스 테스트 fixture 생성 실패"
+    },
+    {
+      "command": "$env:TMP/.TEMP를 워크스페이스 .pytest-tmp로 지정 후 python -m pytest tests -q",
+      "result": "27 passed in 0.65s"
+    },
+    {
+      "command": "npm run build",
+      "result": "Vite production build 성공"
+    }
+  ],
+  "verification_summary": "03_review의 lookup 캐시 메모리 누적 지적을 수용해 항목 수 제한, 만료 정리, 초과 항목 제거를 추가했고 회귀 테스트를 보강했다. 워크스페이스 임시 디렉터리 기준 전체 테스트 27개와 프론트엔드 빌드가 통과했다.",
+  "fix_inputs": {
+    "from_03_review": {
+      "must_fix": [],
+      "should_consider": [
+        "_lookup_cache 메모리 누적 완화 대책 도입"
+      ],
+      "optional": [
+        "통화 포맷 고도화",
+        "거래소 상수 설정 모듈 이동"
+      ]
+    },
+    "from_05_verify": [],
+    "verification_latest_json": null
+  },
+  "history_notes": {
+    "implemented": [
+      "Yahoo lookup 캐시 최대 항목 수 기본값 128 추가",
+      "lookup 캐시 쓰기 시점에 만료 항목 정리 및 한도 초과 항목 제거 추가",
+      "lookup 캐시 크기 제한 회귀 테스트 추가"
+    ],
+    "risks": [
+      "캐시 한도 128은 보수적 기본값이며 매우 다양한 검색어를 반복 조회하는 세션에서는 오래된 캐시 재조회가 발생할 수 있음"
+    ],
+    "future_improvements": [
+      "필요 시 lookup_cache_max_items를 환경 설정으로 노출",
+      "통화별 숫자 포맷과 통화 기호 렌더링 개선",
+      "거래소 필터 상수를 별도 설정/상수 모듈로 이동"
+    ],
+    "decisions": [
+      "BLOCKER/MAJOR가 없어 NEEDS_USER 없이 권장 기본값으로 진행",
+      "메모리 누적 가능성은 장시간 실행 안정성 문제이므로 수용",
+      "통화 포맷과 거래소 상수 이동은 optional/NIT이며 변경 범위 대비 리스크가 있어 이번 단계에서는 거부",
+      "preferred_model은 Claude이나 실제 실행 모델은 Codex이므로 model_mismatch를 true로 기록"
+    ],
+    "unresolved_items": []
+  },
+  "model_mismatch": true,
+  "actual_model": "Codex"
+}

@@ -36,6 +36,7 @@ class YahooMarketDataAdapter(MarketDataAdapter):
     }
     US_EXCHANGES = {"ASE", "BATS", "NCM", "NGM", "NMS", "NYQ", "PCX", "PNK"}
     KR_EXCHANGES = {"KSC", "KOE", "KOS"}
+    LOOKUP_CACHE_MAX_ITEMS = 128
 
     SECTION_DEFINITIONS = [
         (
@@ -94,11 +95,15 @@ class YahooMarketDataAdapter(MarketDataAdapter):
         fetch_url: FetchUrl | None = None,
         timeout: float | None = None,
         cache_ttl_seconds: int | None = None,
+        lookup_cache_max_items: int | None = None,
         max_workers: int = 8,
     ) -> None:
         self.fetch_url = fetch_url or urlopen
         self.timeout = timeout if timeout is not None else settings.yahoo_api_timeout
         self.cache_ttl_seconds = cache_ttl_seconds if cache_ttl_seconds is not None else settings.cache_ttl_seconds
+        self.lookup_cache_max_items = (
+            lookup_cache_max_items if lookup_cache_max_items is not None else self.LOOKUP_CACHE_MAX_ITEMS
+        )
         self.max_workers = max_workers
         self._cache: dict[str, Any] | None = None
         self._cache_expires_at = 0.0
@@ -197,8 +202,9 @@ class YahooMarketDataAdapter(MarketDataAdapter):
 
     def _get_lookup_cache(self, key: str) -> dict[str, Any] | None:
         with self._cache_lock:
+            now = time.monotonic()
             cached = self._lookup_cache.get(key)
-            if cached is not None and time.monotonic() < cached[0]:
+            if cached is not None and now < cached[0]:
                 return deepcopy(cached[1])
             if cached is not None:
                 self._lookup_cache.pop(key, None)
@@ -206,7 +212,21 @@ class YahooMarketDataAdapter(MarketDataAdapter):
 
     def _set_lookup_cache(self, key: str, data: dict[str, Any]) -> None:
         with self._cache_lock:
-            self._lookup_cache[key] = (time.monotonic() + self.cache_ttl_seconds, deepcopy(data))
+            now = time.monotonic()
+            self._prune_expired_lookup_cache(now)
+            self._lookup_cache[key] = (now + self.cache_ttl_seconds, deepcopy(data))
+            self._evict_lookup_cache()
+
+    def _prune_expired_lookup_cache(self, now: float) -> None:
+        expired_keys = [key for key, (expires_at, _) in self._lookup_cache.items() if now >= expires_at]
+        for key in expired_keys:
+            self._lookup_cache.pop(key, None)
+
+    def _evict_lookup_cache(self) -> None:
+        max_items = max(1, self.lookup_cache_max_items)
+        while len(self._lookup_cache) > max_items:
+            oldest_key = min(self._lookup_cache, key=lambda cache_key: self._lookup_cache[cache_key][0])
+            self._lookup_cache.pop(oldest_key, None)
 
     def _fetch_items(self, fetched_at: datetime) -> dict[str, dict[str, Any]]:
         item_configs = [item for _, _, items in self.SECTION_DEFINITIONS for item in items]

@@ -228,6 +228,26 @@ def testYahooAdapterSearchSymbolsFiltersStocksAndEtfs():
     assert data["results"][1]["displaySymbol"] == "005930"
 
 
+def testYahooAdapterLimitsLookupCacheSize():
+    requested_urls = []
+
+    def fetch_url(request, timeout):
+        requested_urls.append(request.full_url)
+        return FakeYahooResponse(yahooSearchPayload())
+
+    adapter = YahooMarketDataAdapter(fetch_url=fetch_url, cache_ttl_seconds=60, lookup_cache_max_items=2)
+
+    adapter.search_symbols("qld")
+    adapter.search_symbols("aapl")
+    adapter.search_symbols("msft")
+
+    assert len(adapter._lookup_cache) == 2
+    assert "search:qld" not in adapter._lookup_cache
+    assert "search:aapl" in adapter._lookup_cache
+    assert "search:msft" in adapter._lookup_cache
+    assert len(requested_urls) == 3
+
+
 def testYahooAdapterGetStockDetailMapsQuoteAndChart():
     requested_urls = []
 
