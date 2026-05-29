@@ -49,6 +49,52 @@ def testTodoItemsShowActiveFirstAndSuggestResumeWhenOutputsExist(tmp_path, monke
     assert [item["feature"] for item in items] == ["search", "debug"]
     assert items[0]["status"] == "blocked"
     assert items[0]["provider"] == "codex"
-    assert items[0]["next"] == "python .ai\\harness.py resume search --auto --yes --defaults"
+    assert items[0]["next"] == "python .ai\\harness.py resume search"
     assert items[1]["status"] == "complete"
     assert items[1]["next"] == "done"
+
+
+def testTodoItemsSuggestApproveForHumanGate(tmp_path, monkeypatch):
+    monkeypatch.setattr(harness, "RUNS_DIR", tmp_path / ".ai" / "runs")
+    monkeypatch.setattr(harness, "FEATURES_DIR", tmp_path / ".ai" / "features")
+
+    search_state = {
+        "feature_name": "search",
+        "pipeline_mode": "full",
+        "status": "blocked",
+        "current_stage": "01_plan",
+        "provider_schedule": {"01_plan": "agy"},
+        "blocked": {
+            "reason": "Human gate approval required.",
+            "next_stage": "02_develop",
+        },
+    }
+    writeJson(harness.RUNS_DIR / "search" / "run.json", search_state)
+
+    output = harness.FEATURES_DIR / "search" / "01_plan.md"
+    result_json = output.with_name("01_plan.result.json")
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text("done\n", encoding="utf-8")
+    result_json.write_text('{"status":"PASS"}\n', encoding="utf-8")
+
+    items = harness.todo_items()
+
+    assert items[0]["next"] == "python .ai\\harness.py approve search --auto --yes --defaults"
+
+
+def testTodoItemsSuggestPlainResumeForModelCompleted(tmp_path, monkeypatch):
+    monkeypatch.setattr(harness, "RUNS_DIR", tmp_path / ".ai" / "runs")
+    monkeypatch.setattr(harness, "FEATURES_DIR", tmp_path / ".ai" / "features")
+
+    search_state = {
+        "feature_name": "search",
+        "pipeline_mode": "full",
+        "status": "model_completed",
+        "current_stage": "05_verify",
+        "provider_schedule": {"05_verify": "agy"},
+    }
+    writeJson(harness.RUNS_DIR / "search" / "run.json", search_state)
+
+    items = harness.todo_items()
+
+    assert items[0]["next"] == "python .ai\\harness.py resume search"

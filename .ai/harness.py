@@ -1635,16 +1635,19 @@ def todo_next_action(state: dict[str, Any]) -> str:
         return "done"
     if status == "blocked":
         blocked = state.get("blocked") if isinstance(state.get("blocked"), dict) else {}
+        reason = str(blocked.get("reason") or "") if isinstance(blocked, dict) else ""
+        if "Human gate approval required" in reason:
+            return f"python {script} approve {feature} --auto --yes --defaults"
         if stage in STAGES:
             output = stage_output_path(feature, stage)
             result_json = stage_result_json_path(feature, stage)
             if output.exists() and result_json.exists():
-                return f"python {script} resume {feature} --auto --yes --defaults"
+                return f"python {script} resume {feature}"
         if isinstance(blocked, dict) and blocked.get("retry_command"):
             return str(blocked["retry_command"])
         return f"python {script} retry {feature} --auto --yes --defaults"
     if status == "model_completed":
-        return f"python {script} resume {feature} --auto --yes --defaults"
+        return f"python {script} resume {feature}"
     if status in {"created", "waiting_for_model"}:
         return f"python {script} auto {feature} --yes --defaults"
     if status == "model_running":
