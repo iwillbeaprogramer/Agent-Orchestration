@@ -84,6 +84,8 @@ NO_COMMIT_STAGES = {"00_specify", "01_plan", "03_review", "06_document"}
 DEFAULT_MAX_VERIFY_FIX_RETRIES = 3
 DEFAULT_VERIFY_COMMAND_TIMEOUT_SECONDS = 600
 DEFAULT_PROVIDER_HEARTBEAT_SECONDS = 30
+DEFAULT_PROVIDER_OUTPUT_CHECK_SECONDS = 60
+DEFAULT_PROVIDER_OUTPUT_STABLE_CHECKS = 2
 DEFAULT_WATCH_INTERVAL_SECONDS = 5
 DEFAULT_DOCTOR_DEEP_TIMEOUT_SECONDS = 60
 
@@ -1607,6 +1609,124 @@ def harness_script_for_state(state: dict[str, Any]) -> str:
     return harness_script_for_pipeline_mode(state.get("pipeline_mode"))
 
 
+def compact_todo_text(text: str, max_chars: int = 180) -> str:
+    compact = " ".join(str(text).split())
+    if len(compact) <= max_chars:
+        return compact
+    return compact[: max_chars - 3] + "..."
+
+
+def todo_provider_for_state(state: dict[str, Any]) -> str:
+    stage = str(state.get("current_stage") or "")
+    if stage not in STAGES:
+        return "-"
+    try:
+        return provider_for_stage(stage, state)
+    except HarnessError:
+        return "-"
+
+
+def todo_next_action(state: dict[str, Any]) -> str:
+    feature = str(state.get("feature_name") or "<feature>")
+    stage = str(state.get("current_stage") or "")
+    status = str(state.get("status") or "")
+    script = harness_script_for_state(state)
+    if status == "complete":
+        return "done"
+    if status == "blocked":
+        blocked = state.get("blocked") if isinstance(state.get("blocked"), dict) else {}
+        if stage in STAGES:
+            output = stage_output_path(feature, stage)
+            result_json = stage_result_json_path(feature, stage)
+            if output.exists() and result_json.exists():
+                return f"python {script} resume {feature} --auto --yes --defaults"
+        if isinstance(blocked, dict) and blocked.get("retry_command"):
+            return str(blocked["retry_command"])
+        return f"python {script} retry {feature} --auto --yes --defaults"
+    if status == "model_completed":
+        return f"python {script} resume {feature} --auto --yes --defaults"
+    if status in {"created", "waiting_for_model"}:
+        return f"python {script} auto {feature} --yes --defaults"
+    if status == "model_running":
+        return f"python {script} watch {feature}"
+    return f"python {script} status {feature}"
+
+
+def todo_items() -> list[dict[str, str]]:
+    if not RUNS_DIR.exists():
+        return []
+    items: list[dict[str, str]] = []
+    for path in sorted(RUNS_DIR.glob("*/run.json")):
+        try:
+            state = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            items.append(
+                {
+                    "feature": path.parent.name,
+                    "status": "unreadable",
+                    "stage": "-",
+                    "provider": "-",
+                    "next": f"inspect {rel(path)}",
+                    "reason": compact_todo_text(str(exc)),
+                }
+            )
+            continue
+        if not isinstance(state, dict):
+            items.append(
+                {
+                    "feature": path.parent.name,
+                    "status": "invalid",
+                    "stage": "-",
+                    "provider": "-",
+                    "next": f"inspect {rel(path)}",
+                    "reason": "run.json is not an object",
+                }
+            )
+            continue
+        blocked = state.get("blocked")
+        reason = str(blocked.get("reason") or "") if isinstance(blocked, dict) else ""
+        items.append(
+            {
+                "feature": str(state.get("feature_name") or path.parent.name),
+                "status": str(state.get("status") or "unknown"),
+                "stage": str(state.get("current_stage") or "-"),
+                "provider": todo_provider_for_state(state),
+                "next": todo_next_action(state),
+                "reason": compact_todo_text(reason) if reason else "",
+            }
+        )
+    return sorted(
+        items,
+        key=lambda item: (
+            item["status"] == "complete",
+            item["feature"],
+        ),
+    )
+
+
+def print_todo() -> None:
+    items = todo_items()
+    if not items:
+        print("todo: no runs")
+        return
+    active_count = sum(1 for item in items if item["status"] != "complete")
+    complete_count = len(items) - active_count
+    header = (
+        f"todo: {color_text(str(active_count), 'yellow', 'bold')} active, "
+        f"{color_text(str(complete_count), 'green', 'bold')} complete"
+    )
+    print(header)
+    print()
+    for item in items:
+        status = item["status"]
+        status_label = color_text(status.upper(), *status_style(status))
+        feature_label = color_text(item["feature"], "bold")
+        print(f"- {feature_label} [{status_label}] stage={item['stage']} provider={item['provider']}")
+        if item["reason"]:
+            print(f"  reason: {item['reason']}")
+        print(f"  next: {item['next']}")
+
+
 def explain_lines(state: dict[str, Any]) -> list[str]:
     feature = state["feature_name"]
     stage = str(state.get("current_stage") or "")
@@ -1937,6 +2057,8 @@ def build_parser() -> argparse.ArgumentParser:
     status = sub.add_parser("status", help="Show run status.")
     status.add_argument("feature", nargs="?", help="Feature slug. Omit to list all runs.")
 
+    sub.add_parser("todo", help="Show active and completed feature runs with next actions.")
+
     sub.add_parser("list", help="List all runs.")
 
     prompt = sub.add_parser("prompt", help="Show current prompt path or content.")
@@ -2087,6 +2209,9 @@ def main(argv: list[str] | None = None) -> int:
             return 0
         if args.command == "status":
             print_status(args.feature)
+            return 0
+        if args.command == "todo":
+            print_todo()
             return 0
         if args.command == "list":
             print_status(None)

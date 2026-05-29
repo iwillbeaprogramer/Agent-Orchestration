@@ -340,6 +340,80 @@ def _provider_failure_reason(
     )
 
 
+def _stage_artifact_signature(paths: list[Path]) -> tuple[tuple[str, int, int], ...] | None:
+    signature: list[tuple[str, int, int]] = []
+    for path in paths:
+        try:
+            stat = path.stat()
+        except OSError:
+            return None
+        mtime_ns = getattr(stat, "st_mtime_ns", int(stat.st_mtime * 1_000_000_000))
+        signature.append((rel(path), stat.st_size, int(mtime_ns)))
+    return tuple(signature)
+
+
+def _read_live_stage_result(path: Path) -> dict[str, Any] | None:
+    try:
+        parsed = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _stage_artifact_completion_candidate(
+    feature: str,
+    stage: str,
+    baseline_signature: tuple[tuple[str, int, int], ...] | None,
+) -> dict[str, Any] | None:
+    output = stage_output_path(feature, stage)
+    result_json = stage_result_json_path(feature, stage)
+    paths = [output, result_json]
+    signature = _stage_artifact_signature(paths)
+    if signature is None or signature == baseline_signature:
+        return None
+    if any(file_size(path) <= 0 for path in paths):
+        return None
+
+    result = _read_live_stage_result(result_json)
+    if result is None:
+        return None
+    required = {"status", "next_stage", "human_gate_required", "blocking_reason"}
+    if any(key not in result for key in required):
+        return None
+
+    status = stage_status(result)
+    if status not in {"PASS", "FAIL", "SKIPPED", "NEEDS_USER"}:
+        return None
+    next_stage = str(result.get("next_stage") or stage_default_next(stage) or "").strip()
+    if not next_stage:
+        return None
+    if next_stage != "done" and next_stage not in STAGES:
+        return None
+
+    return {
+        "status": status,
+        "next_stage": next_stage,
+        "output": rel(output),
+        "result_json": rel(result_json),
+        "signature": signature,
+    }
+
+
+def _stop_provider_after_artifact_completion(proc: subprocess.Popen[str]) -> int | None:
+    if proc.poll() is not None:
+        return proc.returncode
+    try:
+        proc.terminate()
+        proc.wait(timeout=5)
+    except (OSError, subprocess.TimeoutExpired):
+        try:
+            proc.kill()
+        except OSError:
+            pass
+        proc.wait()
+    return proc.returncode
+
+
 def _execute_current_prompt(state: dict[str, Any], timeout_seconds: int) -> dict[str, Any]:
     feature = state["feature_name"]
     stage = state["current_stage"]
@@ -386,6 +460,11 @@ def _execute_current_prompt(state: dict[str, Any], timeout_seconds: int) -> dict
     save_state(state)
 
     started = time.time()
+    expected_output = stage_output_path(feature, stage)
+    expected_result_json = stage_result_json_path(feature, stage)
+    initial_artifact_signature = _stage_artifact_signature([expected_output, expected_result_json])
+    output_check_seconds = max(1, int(globals().get("DEFAULT_PROVIDER_OUTPUT_CHECK_SECONDS", 60)))
+    stable_checks_required = max(1, int(globals().get("DEFAULT_PROVIDER_OUTPUT_STABLE_CHECKS", 2)))
     stdout_path.write_text("", encoding="utf-8")
     stderr_path.write_text("", encoding="utf-8")
     with stdout_path.open("w", encoding="utf-8", errors="replace") as stdout_fh, stderr_path.open(
@@ -410,8 +489,95 @@ def _execute_current_prompt(state: dict[str, Any], timeout_seconds: int) -> dict
         last_heartbeat = started
         last_stdout_size = 0
         last_stderr_size = 0
+        last_output_check = started
+        last_completion_signature: tuple[tuple[str, int, int], ...] | None = None
+        stable_completion_checks = 0
         while proc.poll() is None:
             now = time.time()
+            if now - last_output_check >= output_check_seconds:
+                last_output_check = now
+                completion = _stage_artifact_completion_candidate(
+                    feature,
+                    stage,
+                    initial_artifact_signature,
+                )
+                if completion:
+                    signature = completion["signature"]
+                    if signature == last_completion_signature:
+                        stable_completion_checks += 1
+                    else:
+                        last_completion_signature = signature
+                        stable_completion_checks = 1
+                    if stable_completion_checks >= stable_checks_required:
+                        returncode = _stop_provider_after_artifact_completion(proc)
+                        elapsed = round(time.time() - started, 2)
+                        after_head = safe_git_head()
+                        meta_path.write_text(
+                            json.dumps(
+                                {
+                                    "stage": stage,
+                                    "provider": provider,
+                                    "performance": performance,
+                                    "performance_settings": provider_performance_settings(provider, performance),
+                                    "command": redact_prompt_command(command, prompt_text),
+                                    "returncode": returncode,
+                                    "before_head": before_head,
+                                    "after_head": after_head,
+                                    "stdout": rel(stdout_path),
+                                    "stderr": rel(stderr_path),
+                                    "provider_log": rel(cli_log_path),
+                                    "artifact_salvaged": True,
+                                    "artifact_status": completion["status"],
+                                    "artifact_next_stage": completion["next_stage"],
+                                    "finished_at": iso_now(),
+                                },
+                                ensure_ascii=False,
+                                indent=2,
+                            )
+                            + "\n",
+                            encoding="utf-8",
+                        )
+                        if before_head and after_head and before_head != after_head:
+                            state["status"] = "blocked"
+                            state["blocked"] = {
+                                "stage": stage,
+                                "reason": "Provider changed Git HEAD. The harness owns commits; inspect history before continuing.",
+                            }
+                            write_handoff(
+                                state,
+                                str(state["blocked"]["reason"]),
+                                stage=stage,
+                                next_action="Git history瑜??먭??????섎룞?쇰줈 ?뺣━?섍퀬 resume ?먮뒗 retry ?섏꽭??",
+                            )
+                            log_event(
+                                state,
+                                "blocked_provider_changed_head",
+                                "provider changed Git HEAD",
+                                stage=stage,
+                                before_head=before_head,
+                                after_head=after_head,
+                            )
+                            save_state(state)
+                            return state
+
+                        state["status"] = "model_completed"
+                        log_event(
+                            state,
+                            "provider_artifact_completed",
+                            f"{provider} produced stable stage outputs",
+                            stage=stage,
+                            provider=provider,
+                            stdout=rel(stdout_path),
+                            stderr=rel(stderr_path),
+                            provider_log=rel(cli_log_path),
+                            output=completion["output"],
+                            result_json=completion["result_json"],
+                            artifact_status=completion["status"],
+                            artifact_next_stage=completion["next_stage"],
+                            elapsed_seconds=elapsed,
+                        )
+                        save_state(state)
+                        return state
             if timeout_seconds > 0 and now - started > timeout_seconds:
                 proc.kill()
                 proc.wait()
@@ -558,8 +724,6 @@ def _execute_current_prompt(state: dict[str, Any], timeout_seconds: int) -> dict
         save_state(state)
         return state
 
-    expected_output = stage_output_path(feature, stage)
-    expected_result_json = stage_result_json_path(feature, stage)
     if (
         not expected_output.exists()
         and not expected_result_json.exists()
@@ -637,6 +801,10 @@ _INTERNAL_NAMES = {
     'log_tail': _log_tail,
     'provider_output_tails': _provider_output_tails,
     'provider_failure_reason': _provider_failure_reason,
+    'stage_artifact_signature': _stage_artifact_signature,
+    'read_live_stage_result': _read_live_stage_result,
+    'stage_artifact_completion_candidate': _stage_artifact_completion_candidate,
+    'stop_provider_after_artifact_completion': _stop_provider_after_artifact_completion,
     'execute_current_prompt': _execute_current_prompt,
 }
 
