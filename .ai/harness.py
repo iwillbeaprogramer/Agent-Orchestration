@@ -1395,6 +1395,24 @@ def auto_drive(
     return workflow_core._with_ctx(globals(), workflow_core._auto_drive, state, yes, timeout_seconds, max_steps, max_verify_fix_retries)
 
 
+def step_run(
+    feature: str,
+    yes: bool,
+    defaults: bool,
+    timeout_seconds: int,
+    max_verify_fix_retries: int = DEFAULT_MAX_VERIFY_FIX_RETRIES,
+) -> dict[str, Any]:
+    return workflow_core._with_ctx(
+        globals(),
+        workflow_core._step_run,
+        feature,
+        yes,
+        defaults,
+        timeout_seconds,
+        max_verify_fix_retries,
+    )
+
+
 def safe_git_head() -> str:
     return workflow_core._with_ctx(globals(), workflow_core._safe_git_head)
 
@@ -2043,6 +2061,18 @@ def build_parser() -> argparse.ArgumentParser:
     add_performance_arg(auto)
     add_retry_arg(auto)
 
+    step = sub.add_parser("step", help="Execute exactly one current stage and stop.")
+    step.add_argument("feature", help="Feature slug.")
+    step.add_argument("--yes", action="store_true", help="Approve the current human gate before running one stage.")
+    step.add_argument(
+        "--defaults",
+        action="store_true",
+        help="Switch this run to defaults mode before running one stage.",
+    )
+    step.add_argument("--timeout", type=int, default=3600, help="Provider timeout in seconds.")
+    add_performance_arg(step)
+    add_retry_arg(step)
+
     approve = sub.add_parser("approve", help="Approve a blocked human gate and continue.")
     approve.add_argument("feature", help="Feature slug.")
     approve.add_argument("--auto", action="store_true", help="Continue executing stages with local providers after approval.")
@@ -2185,6 +2215,19 @@ def main(argv: list[str] | None = None) -> int:
                 yes=args.yes,
                 timeout_seconds=args.timeout,
                 max_steps=args.max_steps,
+                max_verify_fix_retries=args.max_verify_fix_retries,
+            )
+            print(run_status_line(state))
+            if state.get("current_prompt"):
+                print(f"prompt: {ROOT / state['current_prompt']}")
+            return 0
+        if args.command == "step":
+            apply_runtime_performance(load_state(args.feature), args.performance)
+            state = step_run(
+                args.feature,
+                yes=args.yes,
+                defaults=args.defaults,
+                timeout_seconds=args.timeout,
                 max_verify_fix_retries=args.max_verify_fix_retries,
             )
             print(run_status_line(state))

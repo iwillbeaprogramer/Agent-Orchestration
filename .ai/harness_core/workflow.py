@@ -178,6 +178,66 @@ def _auto_drive(
     raise HarnessError(f"Reached max auto steps ({max_steps}) without completion.")
 
 
+def _step_run(
+    feature: str,
+    yes: bool,
+    defaults: bool,
+    timeout_seconds: int,
+    max_verify_fix_retries: int = DEFAULT_MAX_VERIFY_FIX_RETRIES,
+) -> dict[str, Any]:
+    state = load_state(feature)
+    if defaults and not state.get("defaults_mode"):
+        state["defaults_mode"] = True
+        log_event(state, "defaults_mode_enabled", "defaults mode enabled for one-stage step")
+        save_state(state)
+
+    log_event(
+        state,
+        "step_started",
+        "executing one stage only",
+        yes=yes,
+        timeout_seconds=timeout_seconds,
+        max_verify_fix_retries=max_verify_fix_retries,
+    )
+
+    if state.get("status") == "complete":
+        log_event(state, "step_complete", "run is already complete")
+        return state
+
+    if state.get("current_stage") == PC_REVIEW_STAGE:
+        return finish_pc_candidate_extraction(state)
+
+    if state.get("status") == "created":
+        generate_prompt(state, state["current_stage"])
+
+    if state.get("status") == "blocked":
+        blocked = state.get("blocked", {})
+        reason = str(blocked.get("reason", ""))
+        if yes and "Human gate approval required" in reason:
+            log_event(state, "step_approving_gate", "approving current human gate", reason=reason)
+            state = approve_run(
+                state["feature_name"],
+                max_verify_fix_retries=max_verify_fix_retries,
+            )
+        else:
+            log_event(state, "step_blocked", "one-stage step stopped at blocked state", reason=reason)
+            save_state(state)
+            return state
+
+    if state.get("status") == "waiting_for_model":
+        state = execute_current_prompt(state, timeout_seconds)
+        if state.get("status") == "blocked":
+            return state
+
+    if state.get("status") == "model_completed":
+        return resume_run(state["feature_name"], max_verify_fix_retries=max_verify_fix_retries)
+
+    if state.get("status") in {"waiting_for_model", "blocked", "complete"}:
+        return state
+
+    raise HarnessError(f"Cannot step run in status={state.get('status')!r}")
+
+
 def _safe_git_head() -> str:
     try:
         return git_head()
@@ -1019,6 +1079,7 @@ _INTERNAL_NAMES = {
     'finish_pc_candidate_extraction': _finish_pc_candidate_extraction,
     'maybe_rename_feature': _maybe_rename_feature,
     'auto_drive': _auto_drive,
+    'step_run': _step_run,
     'safe_git_head': _safe_git_head,
     'filtered_changed_paths': _filtered_changed_paths,
     'assert_clean_run_start_paths': _assert_clean_run_start_paths,
@@ -1079,6 +1140,10 @@ def maybe_rename_feature(ctx: dict[str, Any], *args: Any, **kwargs: Any) -> Any:
 
 def auto_drive(ctx: dict[str, Any], *args: Any, **kwargs: Any) -> Any:
     return _with_ctx(ctx, _auto_drive, *args, **kwargs)
+
+
+def step_run(ctx: dict[str, Any], *args: Any, **kwargs: Any) -> Any:
+    return _with_ctx(ctx, _step_run, *args, **kwargs)
 
 
 def safe_git_head(ctx: dict[str, Any], *args: Any, **kwargs: Any) -> Any:
