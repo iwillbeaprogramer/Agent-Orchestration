@@ -1,0 +1,14 @@
+
+> market-dashboard-frontend@0.1.0 build
+> vite build
+
+[36mvite v8.0.14 [32mbuilding client environment for production...[36m[39m
+[2K
+transforming...✓ 22 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.40 kB │ gzip:  0.27 kB
+dist/assets/index-CbN8s2P3.css    7.24 kB │ gzip:  2.24 kB
+dist/assets/index-De-XyfoJ.js   155.50 kB │ gzip: 50.12 kB
+
+[32m✓ built in 72ms[39m

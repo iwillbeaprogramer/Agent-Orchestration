@@ -1,0 +1,130 @@
+{
+  "feature_name": "search",
+  "stage": "05_verify",
+  "attempt": 1,
+  "result_path": ".ai/runs/search/verification/05_verify_attempt1_20260529-100708.json",
+  "latest_path": ".ai/runs/search/verification/latest.json",
+  "started_at": "2026-05-29T10:07:08",
+  "finished_at": "2026-05-29T10:07:13",
+  "required": true,
+  "passed": false,
+  "status": "FAIL",
+  "commands": [
+    {
+      "name": "harness-python-compile",
+      "source": "configured",
+      "command": [
+        "python",
+        "-m",
+        "py_compile",
+        ".ai\\harness.py",
+        ".ai\\harness_fast.py",
+        ".ai\\harness_standard.py",
+        ".ai\\pc_review.py",
+        ".ai\\templates\\docx_helper.py",
+        ".ai\\harness_core\\__init__.py",
+        ".ai\\harness_core\\text.py",
+        ".ai\\harness_core\\frontmatter.py",
+        ".ai\\harness_core\\history.py",
+        ".ai\\harness_core\\json_io.py",
+        ".ai\\harness_core\\docx_validation.py",
+        ".ai\\harness_core\\policy.py",
+        ".ai\\harness_core\\providers.py",
+        ".ai\\harness_core\\stage_runtime.py",
+        ".ai\\harness_core\\verification.py",
+        ".ai\\harness_core\\workflow.py"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 600,
+      "returncode": 0,
+      "elapsed_seconds": 0.17,
+      "passed": true,
+      "timed_out": false,
+      "stdout": ".ai/runs/search/verification/05_verify_attempt1_harness-python-compile.out.txt",
+      "stderr": ".ai/runs/search/verification/05_verify_attempt1_harness-python-compile.err.txt"
+    },
+    {
+      "name": "git-diff-check",
+      "source": "configured",
+      "command": [
+        "git",
+        "-c",
+        "safe.directory=D:\\test\\vibe-coding-toolkit\\Agent Orchestration",
+        "diff",
+        "--check"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 600,
+      "returncode": 0,
+      "elapsed_seconds": 0.06,
+      "passed": true,
+      "timed_out": false,
+      "stdout": ".ai/runs/search/verification/05_verify_attempt1_git-diff-check.out.txt",
+      "stderr": ".ai/runs/search/verification/05_verify_attempt1_git-diff-check.err.txt"
+    },
+    {
+      "name": "backend-tests",
+      "source": "configured",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests/backend"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 600,
+      "returncode": 0,
+      "elapsed_seconds": 1.1,
+      "passed": true,
+      "timed_out": false,
+      "stdout": ".ai/runs/search/verification/05_verify_attempt1_backend-tests.out.txt",
+      "stderr": ".ai/runs/search/verification/05_verify_attempt1_backend-tests.err.txt"
+    },
+    {
+      "name": "frontend-build",
+      "source": "configured",
+      "command": [
+        "npm.cmd",
+        "run",
+        "build"
+      ],
+      "cwd": "src/frontend",
+      "timeout_seconds": 600,
+      "returncode": 0,
+      "elapsed_seconds": 1.75,
+      "passed": true,
+      "timed_out": false,
+      "stdout": ".ai/runs/search/verification/05_verify_attempt1_frontend-build.out.txt",
+      "stderr": ".ai/runs/search/verification/05_verify_attempt1_frontend-build.err.txt"
+    },
+    {
+      "name": "backend-tests",
+      "source": "configured",
+      "command": [
+        "python",
+        "-m",
+        "pytest",
+        "tests"
+      ],
+      "cwd": ".",
+      "timeout_seconds": 600,
+      "returncode": 1,
+      "elapsed_seconds": 1.92,
+      "passed": false,
+      "timed_out": false,
+      "stdout": ".ai/runs/search/verification/05_verify_attempt1_backend-tests.out.txt",
+      "stderr": ".ai/runs/search/verification/05_verify_attempt1_backend-tests.err.txt"
+    }
+  ],
+  "failed_commands": [
+    "backend-tests"
+  ],
+  "configured_command_count": 5,
+  "dynamic_command_fields": [
+    "test_commands"
+  ],
+  "dynamic_commands": [],
+  "skipped_dynamic_commands": [],
+  "rejected_dynamic_commands": [],
+  "promoted_commands": []
+}

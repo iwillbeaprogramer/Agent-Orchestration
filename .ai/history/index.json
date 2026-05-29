@@ -3,6 +3,51 @@
     "features": [
         {
             "schema_version": 1,
+            "event_id": "20260528164113-search-full",
+            "feature": "search",
+            "pipeline": "full",
+            "status": "complete",
+            "created_at": "2026-05-28T16:41:13",
+            "completed_at": "2026-05-29T10:32:18",
+            "request_summary": "기존의 대시보드를 메인텝으로하고 이제 설정탭을 추가로 만들어줫으면 좋겠어. 이 설정탭에서의 기능은 주식을 검색하고(한국/미국 주식,etf만) 이 검색한걸 전용탭을 만들어서 추가해놓는거야. 만약 qld라는 종목을 추가했다면 총 탭은 대시보드-qld-설정 이렇게 되겠지. 설정은 항상 가장 마지막에 와야해. 그리고 이 특정 종목을 보는 탭에서는, 이 종목에 대한 자세한 정보가 보였으면해. 시가 종가 등등 엄청 많잖아. 그런거. 그리고 차트까지.",
+            "verification": "PASS",
+            "verification_source": ".ai/runs/search/verification/latest.json",
+            "risk_level": "low",
+            "feature_dir": ".ai/features/search",
+            "run_dir": ".ai/runs/search",
+            "doc": ".ai/docs/search_명세서.docx",
+            "commits": {
+                "02_develop": "68a86c7f146ade5d2989b477cfd39f452eb1cf47",
+                "04_fix": "f14ed090508b40bae061752e1a5b8e87b62cb659",
+                "05_verify": "b2d1f1b954918fdcf375067c6c72212e8d4dbd62"
+            },
+            "implemented": [
+                "대시보드-종목탭-설정 탭 구조 요구사항을 확정했다.",
+                "설정 탭에서 한국/미국 주식 및 ETF만 검색하고 전용 종목 탭으로 추가하는 범위를 확정했다.",
+                "종목 상세 정보와 차트 API/UI의 최소 표시 항목을 정의했다.",
+                "기존 Yahoo 어댑터 확장, localStorage 저장, 중복 추가 시 기존 탭 이동을 기본 결정으로 기록했다.",
+                "대시보드, 사용자 종목 탭, 설정 탭 순서의 React 탭 네비게이션을 구현했다.",
+                "설정 탭에서 한국/미국 주식 및 ETF 검색, 추가, 중복 시 기존 탭 열기, 제거 기능을 구현했다.",
+                "종목 상세 탭에서 주요 quote 필드와 1D/1M/3M/1Y SVG 차트를 제공했다.",
+                "FastAPI에 검색 및 상세 API를 추가하고 Yahoo Finance 어댑터와 mock 어댑터를 확장했다."
+            ],
+            "important_followups": [
+                "Server-side watchlist storage for user accounts",
+                "Additional chart ranges and technical indicators",
+                "Portfolio return tracking, alerts, and group management",
+                "서버 연동 관심종목 기능",
+                "프론트 테스트 러너가 도입되면 localStorage 복구와 탭 추가/삭제 플로우를 자동화한다."
+            ],
+            "important_decisions": [
+                "feature_name은 하네스가 잠근 search를 유지한다.",
+                "대시보드는 항상 첫 번째 탭, 설정은 항상 마지막 탭으로 둔다.",
+                "추가 종목 탭은 브라우저 localStorage에 저장한다.",
+                "검색/상세 데이터는 기존 YahooMarketDataAdapter 패턴을 확장해 제공한다.",
+                "차트는 새 외부 라이브러리 없이 가벼운 자체 렌더링을 기본으로 한다."
+            ]
+        },
+        {
+            "schema_version": 1,
             "event_id": "20260528161801-debug-full",
             "feature": "debug",
             "pipeline": "full",
@@ -132,5 +177,5 @@
             ]
         }
     ],
-    "updated_at": "2026-05-28T16:38:36"
+    "updated_at": "2026-05-29T10:32:18"
 }

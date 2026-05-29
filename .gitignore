@@ -21,6 +21,8 @@ __pycache__/
 *.py[cod]
 *.pyd
 .pytest_cache/
+.pytest-tmp/
+.pytest_tmp/
 .mypy_cache/
 .ruff_cache/
 .tox/
@@ -32,6 +34,11 @@ htmlcov/
 venv/
 env/
 *.egg-info/
+
+# Harness verification scratch
+.ai/runs/.tmp/
+.ai/runs/_pytest_tmp/
+.ai/runs/*/verification/tmp/
 
 # Node / frontend
 node_modules/

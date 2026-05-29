@@ -29,6 +29,81 @@ DANGEROUS_GIT_SUBCOMMANDS = {"push", "reset", "clean", "checkout", "restore", "r
 SHELL_CONTROL_TOKENS = {"|", "||", "&&", "&", ";", "<", ">", ">>", "2>", "2>>"}
 
 
+def _is_pytest_command(command: list[str]) -> bool:
+    executable = _executable_name(command)
+    if executable in {"pytest", "pytest.exe"}:
+        return True
+    return (
+        executable in {"python", "python.exe", "py", "py.exe"}
+        and len(command) >= 3
+        and command[1] == "-m"
+        and command[2] == "pytest"
+    )
+
+
+def _without_pytest_basetemp(command: list[str]) -> list[str]:
+    cleaned: list[str] = []
+    skip_next = False
+    for part in command:
+        text = str(part)
+        if skip_next:
+            skip_next = False
+            continue
+        if text == "--basetemp":
+            skip_next = True
+            continue
+        if text.startswith("--basetemp="):
+            continue
+        cleaned.append(text)
+    return cleaned
+
+
+def _verification_scratch_root(out_dir: Path) -> Path:
+    run_dir = out_dir.parent
+    runs_dir = run_dir.parent
+    feature = slugify(run_dir.name) or "unknown"
+    return runs_dir / ".tmp" / "verification" / feature
+
+
+def _verification_temp_dir(out_dir: Path, verify_stage: str, attempt: int, name: str) -> Path:
+    stamp = int(time.time() * 1000)
+    return _verification_scratch_root(out_dir) / f"{verify_stage}_attempt{attempt}_{slugify(name)}_{os.getpid()}_{stamp}"
+
+
+def _verification_command_env(temp_dir: Path) -> dict[str, str]:
+    env = os.environ.copy()
+    temp_value = str(temp_dir)
+    env["TMP"] = temp_value
+    env["TEMP"] = temp_value
+    env["TMPDIR"] = temp_value
+    return env
+
+
+def _verification_command_with_temp(command: list[str], temp_dir: Path) -> list[str]:
+    command = [str(part) for part in command]
+    if _is_pytest_command(command):
+        command = _without_pytest_basetemp(command)
+        command.append(f"--basetemp={temp_dir / 'pytest'}")
+    return command
+
+
+def _unique_command_specs(command_specs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: dict[str, int] = {}
+    unique_specs: list[dict[str, Any]] = []
+    for command_spec in command_specs:
+        spec = dict(command_spec)
+        base_name = slugify(str(spec.get("name") or "command")) or "command"
+        count = seen.get(base_name, 0) + 1
+        seen[base_name] = count
+        if count == 1:
+            spec["name"] = base_name
+        else:
+            spec["base_name"] = base_name
+            spec["name"] = f"{base_name}-{count}"
+        unique_specs.append(spec)
+    return unique_specs
+
+
 def configured_verification_commands(ctx: dict[str, Any], feature: str) -> tuple[list[dict[str, Any]], bool]:
     config = ctx["load_config"]()
     verification = config.get("verification")
@@ -458,16 +533,19 @@ def run_verification_command(
     command_spec: dict[str, Any],
 ) -> dict[str, Any]:
     name = command_spec["name"]
-    command = command_spec["command"]
+    configured_command = command_spec["command"]
     cwd = Path(command_spec["cwd"])
     timeout_seconds = int(command_spec["timeout_seconds"])
     stdout_path = out_dir / f"{verify_stage}_attempt{attempt}_{name}.out.txt"
     stderr_path = out_dir / f"{verify_stage}_attempt{attempt}_{name}.err.txt"
+    temp_dir = _verification_temp_dir(out_dir, verify_stage, attempt, name)
+    command = _verification_command_with_temp(configured_command, temp_dir)
     entry: dict[str, Any] = {
         "name": name,
         "source": command_spec.get("source", "configured"),
         "command": command,
         "cwd": ctx["display_cwd"](cwd),
+        "temp_dir": ctx["rel"](temp_dir),
         "timeout_seconds": timeout_seconds,
         "returncode": None,
         "elapsed_seconds": None,
@@ -476,6 +554,24 @@ def run_verification_command(
         "stdout": ctx["rel"](stdout_path),
         "stderr": ctx["rel"](stderr_path),
     }
+    if command_spec.get("base_name"):
+        entry["base_name"] = command_spec["base_name"]
+
+    try:
+        temp_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        entry["error"] = f"Could not create verification temp directory: {exc}"
+        stdout_path.write_text("", encoding="utf-8")
+        stderr_path.write_text(entry["error"] + "\n", encoding="utf-8")
+        ctx["log_event"](
+            state,
+            "harness_verification_command_failed",
+            entry["error"],
+            stage=verify_stage,
+            command=name,
+        )
+        shutil.rmtree(temp_dir, ignore_errors=True)
+        return entry
 
     executable = ctx["resolve_executable"](command)
     if not executable:
@@ -503,6 +599,7 @@ def run_verification_command(
             stderr=subprocess.PIPE,
             timeout=timeout_seconds,
             check=False,
+            env=_verification_command_env(temp_dir),
         )
         elapsed = round(time.time() - started, 2)
         stdout_path.write_text(proc.stdout or "", encoding="utf-8")
@@ -532,6 +629,8 @@ def run_verification_command(
         stderr_path.write_text(str(exc) + "\n", encoding="utf-8")
         entry["elapsed_seconds"] = elapsed
         entry["error"] = str(exc)
+
+    shutil.rmtree(temp_dir, ignore_errors=True)
 
     if not entry["passed"]:
         ctx["log_event"](
@@ -616,7 +715,7 @@ def run_harness_verification(
     summary["skipped_dynamic_commands"] = dynamic_plan["skipped"]
     summary["rejected_dynamic_commands"] = dynamic_plan["rejected"]
 
-    all_commands = commands + dynamic_commands
+    all_commands = _unique_command_specs(commands + dynamic_commands)
     if dynamic_plan["rejected"]:
         summary["failed_commands"].append("rejected_dynamic_verification_commands")
 

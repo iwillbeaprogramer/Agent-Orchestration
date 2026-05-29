@@ -122,8 +122,9 @@
                 "name": "all-tests",
                 "command": [
                     "python",
-                    "-c",
-                    "import os, pathlib, pytest; root = pathlib.Path('.ai/runs/_pytest_tmp'); root.mkdir(parents=True, exist_ok=True); base = root / f'pytest-{os.getpid()}'; raise SystemExit(pytest.main(['tests', f'--basetemp={base}', '-q']))"
+                    "-m",
+                    "pytest",
+                    "tests"
                 ],
                 "cwd": "."
             }
